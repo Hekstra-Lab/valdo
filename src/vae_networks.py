@@ -72,11 +72,11 @@ class VAE(nn.Module):
         self.dim_z = n_dim_latent
         self.device = device
         
-        self.encoder = DenseNet(self.dim_x, self.dim_z * 2, self.n_layer_encoder, self.n_size_encoder, self.activation).to(device)
-        self.decoder = DenseNet(self.dim_z, self.dim_y, self.n_layer_decoder, self.n_size_decoder, self.activation).to(device)
+        self.encoder = DenseNet(self.dim_x, self.dim_z * 2, self.n_layer_encoder+1, self.n_size_encoder, self.activation).to(device)
+        self.decoder = DenseNet(self.dim_z, self.dim_y, self.n_layer_decoder+1, self.n_size_decoder, self.activation).to(device)
         
         self.loss_train = []
-        self.loss_names = ["Loss", "NLL", "KL_div", "Mean_LS"]
+        self.loss_names = ["Loss", "NLL", "KL_div"]
         
     def sample(self, n_sample=1000, mu=0, sigma=1):
         z = mu + sigma * torch.randn(n_sample, self.dim_z, device=self.device)
@@ -84,7 +84,8 @@ class VAE(nn.Module):
         return x
 
     def reconstruct(self, input_x):
-        z_mean, z_log_var = self.encoder(input_x.to(self.device))
+        encoding = self.encoder(input_x.to(self.device))
+        z_mean, z_log_var = encoding[:, :self.dim_z], encoding[:, self.dim_z:]
         z = sampling(z_mean, z_log_var)
         recons = self.decoder(z)
         return recons
@@ -135,9 +136,10 @@ class VAE(nn.Module):
             
             for x_batch, y_batch in progress_bar:
                 x_batch = x_batch.to(self.device)
-                y_batch = y_batch.t0(self.device)
+                y_batch = y_batch.to(self.device)
                 optim.zero_grad()
-                z_mean, z_log_var = self.encoder(x_batch)
+                encoding = self.encoder(x_batch)
+                z_mean, z_log_var = encoding[:, :self.dim_z], encoding[:, self.dim_z:]
                 z = sampling(z_mean, z_log_var)
                 recons_x = self.decoder(z)
                 loss_train, nll_train, kl_train = elbo(z_mean, z_log_var, y_batch, recons_x, w_kl)
@@ -149,16 +151,16 @@ class VAE(nn.Module):
                     x_batch_test = x_batch_test.to(self.device)
                     y_batch_test = y_batch_test.to(self.device)
                     
-                    z_mean_test, z_log_var_test = self.encoder(x_batch_test)
+                    encoding_test = self.encoder(x_batch_test)
+                    z_mean_test, z_log_var_test = encoding_test[:, :self.dim_z], encoding_test[:, self.dim_z:]
                     z_test = sampling(z_mean_test, z_log_var_test)
                     recons_x_test = self.decoder(z_test)
                     loss_test, nll_test, kl_test = elbo(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, w_kl)
 
                     loss_np, loss_test_np = loss_train.item(), loss_test.item()
-                    progress_bar.set_postfix(Trainloss=loss_np, Testloss=loss_test_np)
-                    self.loss_train.append([loss_np, nll_train.item(), kl_train.item(), loss_test, nll_test.item(), kl_test.item()])
-                
+                    progress_bar.set_postfix(Trainloss=loss_np, Testloss=loss_test_np, memory=torch.cuda.memory_allocated()/1e9)
+                    self.loss_train.append([loss_np, nll_train.item(), kl_train.item(), loss_test_np, nll_test.item(), kl_test.item()])  
                 else:
                     loss_np = loss_train.item()
-                    progress_bar.set_postfix(Trainloss=loss_np)
+                    progress_bar.set_postfix(Trainloss=loss_np, memory=torch.cuda.memory_allocated()/1e9)
                     self.loss_train.append([loss_np, nll_train.item(), kl_train.item()])
