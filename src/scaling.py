@@ -84,29 +84,35 @@ class Scaler(object):
         
         return [LS_i, corr_i, LS_f, corr_f]
     
-    def batch_scaling(self, mtz_path_list, outputmtz_path='./scaled_mtzs/', reportfile='./scaling_data.json', verbose=True, n_iter=5):
+    def batch_scaling(self, mtz_path_list, outputmtz_path=None, reportfile='./scaling_data.json', verbose=True, n_iter=5, progress_bar=lambda x:x):
         
-        for path in mtz_path_list:
+        metrics = []
+        for path in progress_bar(mtz_path_list):
             start_time = time.time()
             concrete_filename = path.split('/')[-1].replace(".mtz", "") # "PTP1B_yxxx_idxs"
-            temp_mtz = rs.read_mtz(path)[self.columns].dropna()
-            merge = self.base_mtz.merge(temp_mtz, left_index=True, right_index=True, 
-                                        suffixes=('ref', 'target'), check_isomorphous=False)
+            try:
+                temp_mtz = rs.read_mtz(path)[self.columns].dropna()
+                merge = self.base_mtz.merge(temp_mtz, left_index=True, right_index=True, 
+                                            suffixes=('ref', 'target'), check_isomorphous=False)
+
+                FA = merge["F-obsref"].to_numpy()
+                FB = merge["F-obstarget"].to_numpy()
+                hkl = merge.get_hkls()
+
+                ln_k, uaniso = self.ana_getku(FA, FB, hkl, n_iter=n_iter)
+                metric = self.get_metric(FA, FB, uaniso, ln_k, hkl)
+                metrics.append([concrete_filename, *metric])
+            except:
+                metric = [0, 0, 0, 0]
+                metrics.append([concrete_filename, *metric])
+                
             
-            FA = merge["F-obsref"].to_numpy()
-            FB = merge["F-obstarget"].to_numpy()
-            hkl = merge.get_hkls()
-
-            ln_k, uaniso = self.ana_getku(FA, FB, hkl, n_iter=n_iter)
-            metric = self.get_metric(FA, FB, uaniso, ln_k, hkl)
-            # TODO: A decent way to save the metric
-
-            FB_complete = temp_mtz["F-obs"].to_numpy() 
-            hkl_complete = temp_mtz.get_hkls()
-            temp_mtz['F-obs-scaled'] = rs.DataSeries(self.scaleit(FB_complete, ln_k, uaniso, hkl_complete), dtype="SFAmplitude")
-
-            # Save the scaled mtz file
-            temp_mtz.write_mtz(outputmtz_path+concrete_filename+"_scaled.mtz")
+            if outputmtz_path is not None:
+                FB_complete = temp_mtz["F-obs"].to_numpy() 
+                hkl_complete = temp_mtz.get_hkls()
+                temp_mtz['F-obs-scaled'] = rs.DataSeries(self.scaleit(FB_complete, ln_k, uaniso, hkl_complete), dtype="SFAmplitude")
+                # Save the scaled mtz file
+                temp_mtz.write_mtz(outputmtz_path+concrete_filename+"_scaled.mtz")
 
             str_ = f"Time: {time.time()-start_time:.3f}"
             if verbose:
@@ -114,6 +120,8 @@ class Scaler(object):
                 print(f"Corr before:  {metric[1]:.3f}", f"Corr after: {metric[3]:.3f}", flush=True)
                 print(str_, flush=True)
                 print("="*20)
+            
+        return metrics
             
     
 
