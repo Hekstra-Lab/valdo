@@ -1,11 +1,10 @@
 import torch
-import numpy as np
 
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 
-from vae_basics import DenseNet, sampling, elbo
-from helper import try_gpu
+from .vae_basics import DenseNet, sampling, elbo
+from .helper import try_gpu
 
 from tqdm import tqdm
 import pickle

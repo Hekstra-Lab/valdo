@@ -1,5 +1,4 @@
 import pandas as pd
-import gemmi
 import reciprocalspaceship as rs
 import numpy as np
 import os
