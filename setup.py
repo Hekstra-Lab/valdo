@@ -8,7 +8,7 @@ def getVersionNumber():
 
 __version__ = getVersionNumber()
 
-setup(name="valdo",
+setup(name="rs-valdo",
     version=__version__,
     author="Phyllis Zhang, Minhuan Li",
     license="MIT",
