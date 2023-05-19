@@ -1,5 +1,7 @@
 ## *V*ae *A*ssisted *L*igand *D*isc*O*very (Valdo)
 
+[![PyPI](https://img.shields.io/pypi/v/rs-valdo?color=blue)](https://pypi.org/project/rs-valdo/)
+
 Using variational Autoencoders to improve the signal-to-noise ratio of drug
 fragment screens
 
