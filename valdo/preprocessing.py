@@ -65,8 +65,6 @@ def generate_vae_io(intersection_path, union_path, io_folder):
     np.save(os.path.join(io_folder, "vae_input.npy"), vae_input)
     np.save(os.path.join(io_folder, "vae_output.npy"), vae_output)
     
-    return vae_input, vae_output
-
 def reconstruct(recons_path, intersection_path, union_path, input_files, info_folder, output_folder):
     
     recons = np.load(recons_path)

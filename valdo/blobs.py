@@ -6,6 +6,7 @@ import re
 import glob
 from scipy.ndimage import gaussian_filter
 import os
+import gemmi
 
 
 def generate_preprocess_diff_map_blobs(input_files, model_folder, diff_col, phase_col, output_folder, cutoff=5, negate=False, sample_rate=3):
