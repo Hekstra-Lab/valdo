@@ -1,5 +1,7 @@
 # User Define
 dev/
+scaled_mtzs/
+*pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
