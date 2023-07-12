@@ -110,7 +110,7 @@ class Scaler(object):
             temp_mtz['F-obs-scaled'] = rs.DataSeries(self.scaleit(FB_complete, ln_k, uaniso, hkl_complete), dtype="SFAmplitude")
             temp_mtz = temp_mtz.set_index(['H', 'K', 'L'])
             # Save the scaled mtz file
-            temp_mtz.write_mtz(outputmtz_path+concrete_filename+"_scaled.mtz")
+            temp_mtz.write_mtz(outputmtz_path+concrete_filename+".mtz")
 
             str_ = f"Time: {time.time()-start_time:.3f}"
             if verbose:
