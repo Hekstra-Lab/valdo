@@ -26,7 +26,10 @@ def get_aniso_args_np(uaniso, reciprocal_cell_paras, hkl):
 class Scaler(object):
     """
     reference_mtz : path to mtz file as the reference dataset
-    columns : list of columns to be used in downstreaming tasks
+    
+    columns : list of column names to be used
+        The first name is used for scaling, while the remaining 
+        names will be saved as is without any alterations.
     """
     def __init__(self, reference_mtz, columns=['F-obs', 'SIGF-obs']):
         self.columns = columns
@@ -95,19 +98,19 @@ class Scaler(object):
             merge = self.base_mtz.merge(temp_mtz, left_index=True, right_index=True, 
                                         suffixes=('ref', 'target'), check_isomorphous=False)
             
-            FA = merge["F-obsref"].to_numpy()
-            FB = merge["F-obstarget"].to_numpy()
+
+            FA = merge[self.columns[0]+"ref"].to_numpy()
+            FB = merge[self.columns[0]+"target"].to_numpy()
             hkl = merge.get_hkls()
 
             ln_k, uaniso = self.ana_getku(FA, FB, hkl, n_iter=n_iter)
             metric = self.get_metric(FA, FB, uaniso, ln_k, hkl)
-            # TODO: A decent way to save the metric
 
-            FB_complete = temp_mtz["F-obs"].to_numpy() 
+            FB_complete = temp_mtz[self.columns[0]].to_numpy() 
             hkl_complete = temp_mtz.get_hkls()
             
             temp_mtz = temp_mtz.reset_index()
-            temp_mtz['F-obs-scaled'] = rs.DataSeries(self.scaleit(FB_complete, ln_k, uaniso, hkl_complete), dtype="SFAmplitude")
+            temp_mtz[self.columns[0]+'-scaled'] = rs.DataSeries(self.scaleit(FB_complete, ln_k, uaniso, hkl_complete), dtype="SFAmplitude")
             temp_mtz = temp_mtz.set_index(['H', 'K', 'L'])
             # Save the scaled mtz file
             temp_mtz.write_mtz(outputmtz_path+concrete_filename+".mtz")
