@@ -31,7 +31,7 @@ def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 
         print("No ambiguity for this spacegroup! No need to reindex!")
         return None
     else:
-        try_ops = unit_ops.extend(alt_ops)
+        try_ops = unit_ops + alt_ops
 
     # Reindex each input MTZ file with all possible ops
     reindexed_record = []
@@ -49,7 +49,8 @@ def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 
             symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
             symopi_asu.write_mtz(output_file)
             reindexed_record.append([i,output_file]) # if i == 0, no reindex
-        except:
+        except Exception as e:
+            print(input_file + e)
             continue
     
     with open(os.path.join(output_folder, 'reindex_record.pkl'), "wb") as f:
