@@ -59,6 +59,8 @@ The first step involves acquiring diffraction datasets in the `mtz` format. Thes
 
 Following this naming convention will allow datasets to be ready for further processing.
 
+<br/>
+
 ### Step 2: Reindexing & Scaling
 
 This step focuses on reindexing and scaling a list of input MTZ files to a reference MTZ file using gemmi. 
