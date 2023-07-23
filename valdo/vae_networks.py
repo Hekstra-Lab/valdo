@@ -63,7 +63,7 @@ class VAE(nn.Module):
             self.n_size_encoder = n_hidden_size[:self.n_layer_encoder]
             self.n_size_decoder = n_hidden_size[self.n_layer_encoder:]
         else: 
-            raise ValueError("Pleas provide legal n_hidden_size!")
+            raise ValueError("Please provide legal n_hidden_size!")
         
         self.dim_x = n_dim_i
         self.dim_y = n_dim_o
