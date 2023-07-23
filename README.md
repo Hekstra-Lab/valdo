@@ -88,10 +88,10 @@ This step focuses on reindexing and scaling a list of input MTZ files to a refer
 
     This function can be called with the following parameters:
     - `mtz_path_list`: List of paths to input MTZ files to be scaled.
-    - `outputmtz_path`: Path to the folder where the scaled MTZ files will be saved (optional, default is `./scaled_mtzs/`).
-    - `reportfile`: Path to the file where scaling metrics will be saved (optional, default is `./scaling_data.json`).
-    - `verbose`: Whether to display verbose information during scaling (optional, default is `True`).
-    - `n_iter`: Number of iterations for the analytical scaling method (optional, default is `5`).
+    - `outputmtz_path`: Path to the folder where the scaled MTZ files will be saved (optional, default `./scaled_mtzs/`).
+    - `reportfile`: Path to the file where scaling metrics will be saved (optional, default `./scaling_data.json`).
+    - `verbose`: Whether to display verbose information during scaling (optional, default `True`).
+    - `n_iter`: Number of iterations for the analytical scaling method (optional, default `5`).
 
 <details>
 <summary>Code Example:</summary>
@@ -137,7 +137,7 @@ Additionally, we standardize all the input data, such that the structure factor 
 
       - `input_files`: List of input MTZ file paths.
       - `output_path`: Path to save the output pickle file containing the intersection data.
-      - `amplitude_col`: Name of the column in the dataset that represents the scaled amplitude (default is 'F-obs-scaled').
+      - `amplitude_col`: Name of the column in the dataset that represents the scaled amplitude (default 'F-obs-scaled').
 
    - `find_union()`: Finds the union of `amplitude_col` from multiple input MTZ files and saves the result to the specified output pickle file. Arguments are the same as `find_intersection()`.
 
@@ -184,13 +184,13 @@ In this step, we train the VAE model using the provided VAE class.
 1. Load the VAE input and output data that was generated in the previous step.
 
 2. Initialize the VAE model with the desired hyperparameters. Tune-able hyperparameters include the following:
-    - `n_dim_latent`: Number of dimensionality in latent space (optional, default `1`)
+    - `n_dim_latent`: Number of dimensions in the latent space (optional, default `1`).
 
-    - `n_hidden_layers`: Number of hidden layers in the encoder and decoder. If an int is given, it will applied to both encoder and decoder; If a length 2 list is given, first int will be used for encoder, the second will be used for decoder
+    - `n_hidden_layers`: Number of hidden layers in the encoder and decoder. If an int is given, it will applied to both encoder and decoder; If a length 2 list is given, first int will be used for encoder, the second will be used for decoder.
 
     - `n_hidden_size`: Number of units in hidden layers. If an int is given, it will be applied to all hidden layers in both encoder and decoder; otherwise, an array with length equal to the number of hidden layers can be given, the number of units will be assigned accordingly.
 
-    - `activation` : Activation function for the hidden layers (optional, default `tanh`)
+    - `activation` : Activation function for the hidden layers (optional, default `tanh`).
 
 3. Split the data into training and validation sets. Randomly select a subset of indices for training and use the rest for validation.
 
@@ -206,15 +206,15 @@ In this step, we train the VAE model using the provided VAE class.
 
     - `optim`: The optimizer used for training the VAE, a PyTorch optimizer object, such as `torch.optim.Adam`, that specifies the optimization algorithm and its hyperparameters, including the learning rate (`lr`).
 
-    - `x_val`: Input data for validation during training. (optional, default is `None`).
+    - `x_val`: Input data for validation during training. (optional, default `None`).
 
-    - `y_val`: Output data for validation during training. (optional, default is `None`).
+    - `y_val`: Output data for validation during training. (optional, default `None`).
 
     - `epochs`: The number of training epochs (epoch: a single pass through the data).
 
-    - `batch_size`: The batch size used during training. If an integer is provided, the same batch size will be used for all epochs. If a list of integers is provided, it should have the same length as the number of epochs, and each value in the list will be used as the batch size for the corresponding epoch. Default is `256`.
+    - `batch_size`: The batch size used during training. If an integer is provided, the same batch size will be used for all epochs. If a list of integers is provided, it should have the same length as the number of epochs, and each value in the list will be used as the batch size for the corresponding epoch (optional, default `256`).
 
-    - `w_kl`: The weight of the Kullback-Leibler (KL) divergence term in the ELBO loss function. The KL divergence term encourages the latent distribution to be close to a prior distribution (usually a standard normal distribution). A higher value of `w_kl` will increase the regularization strength on the latent space. Default is `1.0`.
+    - `w_kl`: The weight of the Kullback-Leibler (KL) divergence term in the ELBO loss function. The KL divergence term encourages the latent distribution to be close to a prior distribution (usually a standard normal distribution). A higher value of `w_kl` will increase the regularization strength on the latent space (optional, default `1.0`).
 
     **Note:** The VAE class internally keeps track of the training loss (`loss_train`) and its components (NLL and KL divergence) during each batch of training. These values can be accessed after training to monitor the training progress and performance. The `loss_train` attribute of the VAE object will be a list containing the training loss values for each batch during training. The `loss_names` attribute contains the names of the loss components: "Loss", "NLL", and "KL_div". These attributes are updated during training and can be used for analysis or visualization.
 
@@ -308,9 +308,9 @@ This function can be called with the following arguments:
 - `diff_col`: Name of the column representing diffraction values in the input MTZ files.
 - `phase_col`: Name of the column representing phase values in the input MTZ files.
 - `output_folder`: Path to the output folder where the blob statistics DataFrame will be saved.
-- `cutoff`: Blob cutoff value. Blobs with values below this cutoff will be ignored (optional, default is `5`).
-- `negate`: Whether to negate the blob statistics (optional, default is `False`). Use True if there is interest in both positive and negative peaks, which is not typically of interest here due to the absolute value function applied to the map.
-- `sample_rate`: Sample rate for generating the grid in the FFT process (optional, default is `3`).
+- `cutoff`: Blob cutoff value. Blobs with values below this cutoff will be ignored (optional, default `5`).
+- `negate`: Whether to negate the blob statistics (optional, default `False`). Use True if there is interest in both positive and negative peaks, which is not typically of interest here due to the absolute value function applied to the map.
+- `sample_rate`: Sample rate for generating the grid in the FFT process (optional, default `3`).
 
 <details>
 <summary>Code Example (3.5 Selected as Desired Cutoff):</summary>
