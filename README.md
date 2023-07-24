@@ -296,6 +296,17 @@ valdo.preprocessing.rescale(recons_path="path/to/reconstructed_vae.npy",
 
 **Note Regarding Models:** In this section, models are also required for each dataset. These can also be obtained by refinement via PHENIX for each dataset, and they should be stored in a single folder, with the same naming convention (i.e. `##.mtz`).
 
+We offer a command-line tool for automatic refinement using PHENIX. Based on our tests, starting with a single apo model yields satisfactory phases and models for the following real-space maps. You can find an example `refine_drug.eff` file in the `notebook/` directory.
+
+<details>
+<summary>Code Example:</summary>
+
+```shell
+valdo.refine --pdbpath "xxx/xxx_apo.pdb" --mtzpath "xxx/*.mtz" --output "yyy/" --eff "xxx/refine_drug.eff"
+```
+</details><br/>
+
+
 In this step, we aim to identify significant changes in electron density caused by ligand binding to a protein. By taking the absolute value of the electron density difference maps and applying Gaussian blurring, a new map is created with merged positive electron density blobs. The blurring process attempts to reduce noise. Blobs are then identified and characterized above a specified contour level and volume threshold.
 
 **Usage:**
