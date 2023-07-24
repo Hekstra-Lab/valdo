@@ -1,0 +1,44 @@
+refinement {
+# strip the unit cell and spacegroup info from the input PDB file to make sure we use the MTZ sg/uc
+output {
+    write_eff_file = True
+    write_geo_file = False
+    write_final_geo_file = False
+    write_def_file = False
+    write_model_cif_file = False
+    write_reflection_cif_file = False
+    export_final_f_model = False
+    write_maps = False
+    write_map_coefficients = True
+    write_map_coefficients_only = False
+    pickle_fmodel = False
+    n_resolution_bins = None
+    quiet = False
+  }
+  electron_density_maps {
+    map_coefficients {
+      map_type = Fc
+      mtz_label_amplitudes = FC
+      mtz_label_phases = PHFC
+    }
+    map_coefficients {
+      map_type = 2mFo-DFc
+      mtz_label_amplitudes = 2FOFCWT
+      mtz_label_phases = PH2FOFCWT
+    }
+    map_coefficients {
+      map_type = mFo-DFc
+      mtz_label_amplitudes = FOFCWT
+      mtz_label_phases = PHFOFCWT
+    }
+  }
+  refine {
+    strategy = *individual_sites individual_sites_real_space *rigid_body \
+               *individual_adp group_adp tls occupancies group_anomalous
+  }
+ main {
+    ordered_solvent = True
+    number_of_macro_cycles = 2
+    nproc = 4
+  }
+}

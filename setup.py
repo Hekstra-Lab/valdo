@@ -23,4 +23,9 @@ setup(name="rs-valdo",
         "reciprocalspaceship>=0.9.18",
         "tqdm"
     ],
+    entry_points={
+        "console_scripts": [
+            "valdo.refine=valdo.commandline.refine:main",
+        ]
+    }
 )
