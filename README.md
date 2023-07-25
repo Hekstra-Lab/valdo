@@ -7,6 +7,7 @@ fragment screens
 
 - [*V*ae *A*ssisted *L*igand *D*isc*O*very (Valdo)](#vae-assisted-ligand-discovery-valdo)
   - [Installation](#installation)
+  - [Repository Organization](#repository-organization)
   - [*VALDO* Usage](#valdo-usage)
     - [Step 1: Diffraction Data](#step-1-diffraction-data)
     - [Step 2: Reindexing \& Scaling](#step-2-reindexing--scaling)
@@ -38,6 +39,31 @@ git clone https://github.com/Hekstra-Lab/drug-screening.git
 cd drug-screening/
 pip install -e .
 ```
+
+## Repository Organization
+
+The `drug-screening` repository is organized into the following directories:
+
+1. `notebooks/`
+   
+    This directory contains several Jupyter notebooks and other related files for different stages of the drug screening method. 
+
+   - `pipeline.ipynb`: This notebook provides a comprehensive walkthrough of our entire drug screening method, encompassing all necessary steps. The analysis is performed on the PTP1B dataset published by Keedy et al., found [here](https://zenodo.org/record/1044103). `scaler.ipynb` and `vae_training.ipynb` demonstrate uses of functions that are also included in `pipeline.ipynb`.
+
+   - `scaler.ipynb`: This notebook demonstrates the usage of `valdo`'s scaling functions. 
+
+    - `vae_training.ipynb`: This notebook demonstrates the usage of `valdo`'s VAE training functions. 
+
+    - `vae_metric_heavy_atom_peak_value.ipynb`: This standalone notebook allows users to calculate the average peak value of electron density maps at locations of ligands' heavy atom. It requires bound-state models to identify the position of the ligands' heavy atoms. This metric is useful for evaluating the signal-to-noise ratio of the drug screening method.
+
+    - `lig_heavy_atoms.pkl`: This file is required by `vae_metric_heavy_atom_peak_value.ipynb`, as it contains essential information for each sample, such as which samples have ligands with heavy atoms and which samples are bound.
+
+    - `refine_drug.eff`: This file assists in the command-line tool for automatic refinement.
+  
+2. `valdo/`
+
+    The `valdo/` directory contains the source code for the `rs-valdo` package.
+
 
 ## *VALDO* Usage
 
