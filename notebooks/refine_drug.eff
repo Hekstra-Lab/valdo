@@ -1,5 +1,8 @@
 refinement {
 # strip the unit cell and spacegroup info from the input PDB file to make sure we use the MTZ sg/uc
+input {
+  xray_data.r_free_flags.generate=True
+}
 output {
     write_eff_file = True
     write_geo_file = False
@@ -33,12 +36,12 @@ output {
     }
   }
   refine {
-    strategy = *individual_sites individual_sites_real_space *rigid_body \
-               *individual_adp group_adp tls occupancies group_anomalous
+    strategy = individual_sites individual_sites_real_space *rigid_body \
+               individual_adp group_adp tls occupancies group_anomalous
   }
  main {
     ordered_solvent = True
-    number_of_macro_cycles = 2
+    number_of_macro_cycles = 1
     nproc = 4
   }
 }

@@ -43,7 +43,7 @@ def main():
         pdb_files.sort()
         mtz_files.sort()
         for pdbfile, mtzfile in zip(pdb_files, mtz_files):
-            mtz_name = mtz_files.split('/')[-1][:-4]
+            mtz_name = mtzfile.split('/')[-1][:-4]
             subprocess.run(["phenix.refine", 
                             pdbfile, 
                             mtzfile, 
@@ -53,7 +53,7 @@ def main():
         print("Only one PDB file is provided, will be used for all refinement initialization!", flush=True)
         pdbfile = pdb_files[0]
         for mtzfile in mtz_files:
-            mtz_name = mtz_files.split('/')[-1][:-4]
+            mtz_name = mtzfile.split('/')[-1][:-4]
             subprocess.run(["phenix.refine", 
                             pdbfile, 
                             mtzfile, 
