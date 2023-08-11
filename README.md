@@ -322,7 +322,7 @@ valdo.preprocessing.rescale(recons_path="path/to/reconstructed_vae.npy",
 
 **Note Regarding Models:** In this section, models are also required for each dataset. These can also be obtained by refinement via PHENIX for each dataset, and they should be stored in a single folder, with the same naming convention (i.e. `##.mtz`).
 
-We offer a command-line tool for automatic refinement using PHENIX. Based on our tests, starting with a single apo model yields satisfactory phases and models for the following real-space maps. You can find an example `refine_drug.eff` file in the `notebook/` directory.
+We offer a command-line tool for automatic refinement using PHENIX. Based on our tests, starting with a single apo model yields satisfactory phases and models for the following real-space maps. You can find an example `refine_drug.eff` file in the `notebook/` directory. You can modify the `eff` configuration file based on your needs!
 
 <details>
 <summary>Code Example:</summary>
