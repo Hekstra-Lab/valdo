@@ -19,26 +19,33 @@ fragment screens
 
 
 ## Installation
+The machine learning components of `valdo` are based on PyTorch and run faster on a a GPU (this may require loading or installing CUDA libraries as well). Several components of the code use `multiprocessing` and run much faster when multiple CPUs are available.
 
 1. Create a environment conda or mamba
     ```
     mamba create -n valdo python=3.10
     ```
 
-2. Install [pytorch](https://pytorch.org/get-started/locally/)
+2. Install [pytorch](https://pytorch.org/get-started/locally/). A CUDA environment + GPU provides improved speed but is not essential.
 
-3. Install the package
+3. Install the package. Either
     ```
     pip install rs-valdo
     ```
     
-If you want the codes for further developing, install by:
+Or, to further develop the code, install by:
 
 ```
 git clone https://github.com/Hekstra-Lab/drug-screening.git
 cd drug-screening/
 pip install -e .
 ```
+4. If you intend to use the provided Jupyter notebooks, you will also need:
+- `python -m pip install -U pip` (update `pip`)
+- `python -m pip install -U matplotlib` (install `matplotlib`)
+- `conda install -c conda-forge scikit-learn` (install scikit-learn)
+
+Please [file an issue](https://github.com/Hekstra-Lab/drug-screening/issues) if you run into any difficulties!
 
 ## Repository Organization
 
@@ -91,9 +98,9 @@ Following this naming convention will allow datasets to be ready for further pro
 
 This step focuses on reindexing and scaling a list of input MTZ files to a reference MTZ file using gemmi. 
 
-**Reindexing:** The datasets provided may include samples from different space groups that describe the same physical crystal structure. To ensure comparability, we reindex each sample to a common indexing scheme by applying reindexing operators. 
+**Reindexing:** The datasets provided may include samples indexed using inconsistent indexing conventions. To ensure comparability, we reindex each sample to a common indexing scheme by applying reindexing operators. 
 
-**Scaling:** The samples are scaled to a reference dataset using a global anisotropic scaling factor by an analytical scaling method that determines the Debye-Waller Factor. The scaling process ensures that structure factor amplitudes are comparable across different datasets, accounting for variabilities such as differences in lattice orientations.
+**Scaling:** The samples are scaled to a reference dataset using a global anisotropic scaling factor by an analytical scaling method that determines the Debye-Waller Factor. The scaling process ensures that structure factor amplitudes are comparable across different datasets, accounting for variabilities such as differences in crystal disorder.
 
 
 **Usage:**
