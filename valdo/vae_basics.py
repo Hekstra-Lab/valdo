@@ -140,10 +140,8 @@ def elbo(mu_z, logvar_z, y_train, y_recons, w_kl):
 
 def elbo_w_err(mu_z, logvar_z, y_train, y_recons, e_train, w_kl, eps=0.01, verbose=False):
     nan_bool = torch.isnan(y_train)
-    nan_bool2 = torch.isnan(y_recons)
-    nan_bool3 = torch.isnan(e_train)
     eff_dim = torch.sum(~nan_bool)
-    least_squares = torch.mean( (y_train[~nan_bool] - y_recons[~nan_bool])**2/(eps+e_train[~nan_bool])**2)
+    least_squares = torch.sum( (y_train[~nan_bool] - y_recons[~nan_bool])**2/(eps+e_train[~nan_bool])**2)
     if verbose:
         # print("Eff_dim = " + str(eff_dim))
         # print("MSE: " + str(least_squares))

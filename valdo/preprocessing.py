@@ -69,6 +69,10 @@ def find_union(input_files, output_path, sigF_path, amplitude_col='F-obs-scaled'
         result_F.to_pickle(output_path)
         result_SIGF.to_pickle(sigF_path)
     else:
+        stripped_keys={}
+        for key in result.columns:
+            stripped_keys[key]=key[2:]
+        result.rename(columns=stripped_keys)
         print(result.info())
         result.to_pickle(output_path)
     
@@ -112,8 +116,8 @@ def standardize(input_, output_folder):
         tuple: A tuple containing the standardized data (numpy.ndarray), mean (float), and standard deviation (float).
     """
 
-    mean = np.mean(input_, axis=0)
-    sd = np.std(input_, axis=0)
+    mean = np.mean(input_)
+    sd = np.std(input_)
     standard = (input_ - mean)/sd
     
     if not os.path.exists(output_folder):
@@ -145,18 +149,24 @@ def generate_vae_io(intersection_path, union_path, sigF_path, io_folder, prefix=
 
     # Generate VAE output (targets for reconstruction)
     vae_output, vae_output_mean, vae_output_std = standardize(union.T, io_folder)
-    vae_output = vae_output.values.astype(np.float32)
+    print("Size of vae_output (training data): " + str(vae_output.shape))
+    print("Size of mean across datasets: " + str(vae_output_mean.shape))
+    print("Size of stdev across datasets: " + str(vae_output_std.shape))
     
     # Generate VAE input
     vae_input = intersection.T
     vae_input = (vae_input - vae_output_mean[vae_input.columns])/vae_output_std[vae_input.columns]
+    print("Size of vae_input (training data): " + str(vae_input.shape))
     
     if include_errors:
         sigF = pd.read_pickle(sigF_path).T
-        vae_sigF = sigF[vae_input.columns]/vae_output_std[vae_input.columns]
+        vae_sigF = sigF/vae_output_std
         vae_sigF = vae_sigF.values.astype(np.float32)
+
+    print("Size of vae_sigF (like training data): " + str(vae_sigF.shape))
     
     # keep this below the if statement:
+    vae_output = vae_output.values.astype(np.float32)
     vae_input = vae_input.values.astype(np.float32)
 
     

@@ -39,7 +39,7 @@ def preprocess(matrix, radius_in_A=5):
     return result
 
 
-def generate_blobs(input_files, model_folder, diff_col, phase_col, output_folder, prefix=None, cutoff=5, negate=False, sample_rate=3):
+def generate_blobs(input_files, model_folder, diff_col, phase_col, output_folder, prefix=None, cutoff=5, radius_in_A=5, negate=False, sample_rate=3):
     
     """
     Generates blobs from electron density maps that have been passed through a pre-processing function using the specified parameters and saves the blob statistics to a DataFrame.
@@ -76,7 +76,7 @@ def generate_blobs(input_files, model_folder, diff_col, phase_col, output_folder
     
     # print(input_files)
     for file in tqdm(input_files):
-        blob_stats_per_file = blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff, negate, sample_rate)            
+        blob_stats_per_file = blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff, radius_in_A, negate, sample_rate)            
         blob_stats.append(blob_stats_per_file)
 
     if not os.path.exists(output_folder):
@@ -87,7 +87,7 @@ def generate_blobs(input_files, model_folder, diff_col, phase_col, output_folder
     print("Done generating blobs and wrote " + os.path.join(output_folder, prefix + 'blob_stats.pkl'))
 
 
-def blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff=4, negate=False, sample_rate=3):
+def blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff=4, radius_in_A=5, negate=False, sample_rate=3):
     sample = rs.read_mtz(file)
     
     sample = rs.read_mtz(file)[[diff_col, phase_col]].dropna()
@@ -109,7 +109,7 @@ def blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff=4
     grid = sample_gemmi.transform_f_phi_to_map(diff_col, phase_col, sample_rate=sample_rate)
     grid.normalize()
     
-    blurred_grid = preprocess(grid)
+    blurred_grid = preprocess(grid, radius_in_A)
     grid.set_subarray(blurred_grid, [0, 0, 0])
     grid.normalize()
     
@@ -153,12 +153,14 @@ def blob_helper_wrapper(input_file, additional_args):
     phase_col    = additional_args[2]
     output_folder= additional_args[3]
     cutoff       = additional_args[4]
-    negate       = additional_args[5]
-    sample_rate  = additional_args[6]
-    blob_stats_df=  blob_helper(input_file, model_folder, diff_col, phase_col, output_folder, cutoff=cutoff, negate=negate, sample_rate=sample_rate)
+    radius_in_A  = additional_args[5]
+    negate       = additional_args[6]
+    sample_rate  = additional_args[7]
+    
+    blob_stats_df=  blob_helper(input_file, model_folder, diff_col, phase_col, output_folder, cutoff=cutoff, radius_in_A=radius_in_A, negate=negate, sample_rate=sample_rate)
     return blob_stats_df
     
-def generate_blobs_pool(input_files, model_folder, diff_col, phase_col, output_folder, prefix=None, cutoff=4, negate=False, sample_rate=3,ncpu=None):
+def generate_blobs_pool(input_files, model_folder, diff_col, phase_col, output_folder, prefix=None, cutoff=4, radius_in_A=5, negate=False, sample_rate=3,ncpu=None):
     """
     See generate_blobs()
     """
@@ -166,7 +168,7 @@ def generate_blobs_pool(input_files, model_folder, diff_col, phase_col, output_f
     if not os.path.exists(output_folder):
         print(output_folder + " should exist already!")
 
-    additional_args=[model_folder, diff_col, phase_col, output_folder, cutoff, negate, sample_rate]    
+    additional_args=[model_folder, diff_col, phase_col, output_folder, cutoff, radius_in_A, negate, sample_rate]    
     with Pool(ncpu) as pool:
         blob_stats = pool.starmap(blob_helper_wrapper, zip(input_files, repeat(additional_args)))
 

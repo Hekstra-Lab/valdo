@@ -116,7 +116,7 @@ class VAE(nn.Module):
             pickle.dump(D, f, pickle.HIGHEST_PROTOCOL)
 
     
-    def train(self, x_train, y_train, e_train, optim, x_val=None, y_val=None, e_val=None, epochs=10, batch_size=256, w_kl=1.0,include_errors=False,stdof=None, verbose=True):
+    def train(self, x_train, y_train, e_train, optim, x_val=None, y_val=None, e_val=None, epochs=10, batch_size=256, w_kl=1.0,eps=0.05, include_errors=False,stdof=None, verbose=True):
 
         if isinstance(batch_size, int):
             batch_size = [batch_size] * epochs
@@ -148,9 +148,9 @@ class VAE(nn.Module):
                     recons_x = self.decoder(z)
 
                     if stdof is None:
-                        loss_train, nll_train, kl_train = elbo_w_err(    z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl)                        
+                        loss_train, nll_train, kl_train = elbo_w_err(    z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl,eps=eps)                        
                     else:
-                        loss_train, nll_train, kl_train = elbo_student_t(z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl,stdof=stdof)
+                        loss_train, nll_train, kl_train = elbo_student_t(z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl,eps=eps, stdof=stdof)
                         
                     loss_train.backward()
                     optim.step()
@@ -168,9 +168,9 @@ class VAE(nn.Module):
                         recons_x_test = self.decoder(z_test)
 
                         if stdof is None:
-                            loss_test, nll_test, kl_test = elbo_w_err(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,verbose=verbose)
+                            loss_test, nll_test, kl_test = elbo_w_err(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,eps=eps, verbose=verbose)
                         else:
-                            loss_test, nll_test, kl_test = elbo_student_t(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,stdof=stdof, verbose=verbose)
+                            loss_test, nll_test, kl_test = elbo_student_t(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,eps=eps, stdof=stdof, verbose=verbose)
     
                         loss_np, loss_test_np = loss_train.item(), loss_test.item()
                         # abbreviated to fit display...
