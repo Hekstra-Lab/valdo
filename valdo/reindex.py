@@ -8,6 +8,25 @@ from multiprocessing import Pool
 from itertools import repeat
 import pickle
 
+
+def weighted_pearsonr(ds1,ds2,data_col="F-obs"):
+    def wcorr(group):
+        x = group[data_col + '_1'].to_numpy().flatten()
+        y = group[data_col + '_2'].to_numpy().flatten()
+        w = group['W'].to_numpy().flatten()
+        return rs.utils.weighted_pearsonr(x,y,w)
+
+    mergedi = ds1.merge(ds2, left_index=True, right_index=True, suffixes=('_1', '_2'), check_isomorphous=False)
+    mergedi.assign_resolution_bins(bins=20, inplace=True)
+    
+    quad_var=mergedi["SIGF-obs_1"].to_numpy()**2 + mergedi["SIGF-obs_2"].to_numpy()**2
+    w=1/quad_var
+    mergedi["W"]=w
+    
+    grouped=mergedi.groupby("bin")
+    result=grouped.apply(wcorr).mean()
+    return result
+
 def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 'SIGF-obs']):
     """
     Reindexes a list of input MTZ files to a reference MTZ file using gemmi.
@@ -49,6 +68,10 @@ def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 
             for op in try_ops:
                 symopi_asu = input_df.apply_symop(op).hkl_to_asu()
                 mergedi = reference_asu.merge(symopi_asu, left_index=True, right_index=True, suffixes=('_ref', '_input'), check_isomorphous=False)
+                mergedi.assign_resolution_bins(bins=20, inplace=True)
+                quad_var=mergedi[columns[1]+"_ref"].to_numpy()**2 + mergedi[columns[1]+"_input"].to_numpy()**2
+                w=1/quad_var
+                
                 corr_ref.append(np.corrcoef(mergedi[columns[0]+'_ref'], mergedi[columns[0]+'_input'])[0][1])
             i = np.argmax(corr_ref)
             output_file = os.path.join(output_folder, os.path.basename(input_file))
@@ -105,8 +128,9 @@ def reindex_from_pool_map(input_file, additional_args):
         try_ops=[gemmi.Op(op) for op in try_ops_list]
         for op in try_ops:
             symopi_asu = input_df.apply_symop(op).hkl_to_asu()
-            mergedi = reference_asu.merge(symopi_asu, left_index=True, right_index=True, suffixes=('_ref', '_input'), check_isomorphous=False)
-            corr_ref.append(np.corrcoef(mergedi[columns[0]+'_ref'], mergedi[columns[0]+'_input'])[0][1])
+            corr_ref.append(weighted_pearsonr(reference_asu,symopi_asu,data_col="F-obs"))
+            # mergedi = reference_asu.merge(symopi_asu, left_index=True, right_index=True, suffixes=('_ref', '_input'), check_isomorphous=False)
+            # corr_ref.append(np.corrcoef(mergedi[columns[0]+'_ref'], mergedi[columns[0]+'_input'])[0][1])
         i = np.argmax(corr_ref)
         output_file = os.path.join(output_folder, os.path.basename(input_file))
         symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()

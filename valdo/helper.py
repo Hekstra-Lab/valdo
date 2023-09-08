@@ -1,9 +1,14 @@
 import os
+import sys
+import glob
+import re
+import shutil
 from multiprocessing import Pool
 from itertools import repeat
 from tqdm import tqdm
 import torch
 import pandas as pd
+import numpy as np
 import reciprocalspaceship as rs
 
 def try_gpu(i=0):
@@ -11,6 +16,108 @@ def try_gpu(i=0):
         return torch.device(f"cuda:{i}")
     return torch.device("cpu")
 
+
+def configure_session():
+    bGPU=torch.cuda.is_available() 
+    if bGPU:
+        print("We will use GPU for torch operations (esp. VAE training).")
+    
+    ncpu=os.cpu_count()
+    print("There are " + str(ncpu) + " CPUs available.")
+    if ncpu > 2:
+        # we keep a free CPU just in case.
+        ncpu=ncpu-1    
+        print("For multiprocessing, we will use " + str(ncpu) + " CPUs.")
+    else:
+        ncpu=1
+        print("We will not use multiprocessing.")
+    return bGPU, ncpu
+
+
+def report_mem_usage(top_n=5):
+    """
+    report_mem_usage(top_n) allows the user to see the largest top_n (int) local variables taking up memory.
+    """
+    def sizeof_fmt(num, suffix='B'):
+        ''' by Fred Cirera,  https://stackoverflow.com/a/1094933/1870254, modified'''
+        for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+            if abs(num) < 1024.0:
+                return "%3.1f %s%s" % (num, unit, suffix)
+            num /= 1024.0
+        return "%.1f %s%s" % (num, 'Yi', suffix)
+
+    print("Memory use of top " + str(top_n) + " local variables.")
+    for name, size in sorted(((name, sys.getsizeof(value)) for name, value in list(
+                              locals().items())), key= lambda x: -x[1])[:top_n]:
+        print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+    
+    return 0
+
+
+def standardize_single_mtzs(filename, additional_args):
+    """
+    Helper function for standardize_input_mtzs().
+    """
+    source_path     =additional_args[0]
+    destination_path=additional_args[1]
+    pattern         =additional_args[2]
+    
+    # Check if the file matches the pattern
+    match = re.match(pattern, filename)
+    if match:
+        # Extract the ID from the filename
+        id = match.group(1)
+        
+        # Define the new filename
+        new_filename = id + ".mtz"
+        
+        # Construct the full source and destination paths
+        tmp_source_path = os.path.join(source_path, filename)
+        tmp_destination_path = os.path.join(destination_path, new_filename)
+        
+        # Copy the file to the destination folder with the new name
+        # print(source_path)
+        # print(destination_path)
+        try:
+            shutil.copy(tmp_source_path, tmp_destination_path)
+            return new_filename
+        except Exception as e:
+            print(e)
+            return None
+    else:
+        print("No match for " + filename)
+        return None
+
+def standardize_input_mtzs(source_path, destination_path, mtz_file_pattern, ncpu=1):
+    """
+    Prepare the raw observed (inut) MTZ files by copying them to the pipeline folder and standardizing their names.
+
+    Parameters:
+        source_path (str): where to find the input MTZ files.
+        destination_path (str): where to put the standardized filenames.
+        mtz_file_pattern (str): regular expression for the input MTZ file names.
+
+    Returns:
+        list of standardized file names for successfully copied files.
+    """
+
+    # Get a list of all files in the source folder
+    file_list = glob.glob(source_path + "*.mtz")
+    print("Copying & renaming " + str(len(file_list)) + " MTZ files from " + source_path + " to " + destination_path)
+    
+
+    additional_args=[source_path, destination_path, mtz_file_pattern]
+    if ncpu>1:
+        with Pool(ncpu) as pool:
+            result = pool.starmap(standardize_single_mtzs, zip(file_list,repeat(additional_args)))
+        
+    else:
+        result=[]
+        for filename in tqdm(file_list):
+            result.append(standardize_single_mtzs(filename, additional_args))
+    result = [i for i in result if i is not None]
+    return result
+ 
 
 def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, phase_2FOFC_col_out='PH2FOFCWT', phase_FOFC_col_out='PHFOFCWT',phase_2FOFC_col_in='PH2FOFCWT', phase_FOFC_col_in='PHFOFCWT'):
     """
@@ -45,6 +152,60 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
         current.write_mtz(vae_reconstructed_with_phases_path + os.path.basename(file))
 
     return no_phases_files
+
+
+def add_weights_single_file(file, additional_args):
+    sigF_col =additional_args[0]
+    diff_col =additional_args[1]
+    sigdF_pct=additional_args[2]
+    absdF_pct=additional_args[3]
+    redo     =additional_args[4]
+
+    success=0
+    try:
+        current = rs.read_mtz(file)
+    except Exception as e:
+        print(e)
+    if "WT" in current and not redo:
+        print("WT already present")
+        already+=1
+    else:
+        # print("Calculating weights for " + file)
+        sigdF=current[sigF_col].to_numpy()
+        absdF=np.abs(current[diff_col].to_numpy())
+        
+        w = 1+(sigdF/np.percentile(sigdF,sigdF_pct))**2+(absdF/np.percentile(absdF,absdF_pct))**2
+        w=1/w
+        current["WT"] = w
+        current["WT"]=current["WT"].astype("W")
+        current["WDF"]=current["WT"]*current[diff_col]
+        current["WDF"]=current["WDF"].astype("F")
+        current.write_mtz(file)
+        success=1
+
+    return success
+
+def add_weights(file_list, sigF_col="SIGF-obs", diff_col="diff",sigdF_pct=99, absdF_pct=99.9, redo=True, ncpu=1):
+    """
+    Add difference map coefficient weights to the corresponding files in file_list in vae_reconstructed_with_phases_path. 
+        Parameters:
+            file_list (list of str) : list of input files (complete path!)
+
+        Returns:
+            list of input files for which no matching file with phases could be found.
+    """
+    
+    additional_args=[sigF_col, diff_col, sigdF_pct, absdF_pct, redo]
+    if ncpu>1:
+        with Pool(ncpu) as pool:
+            result = pool.starmap(add_weights_single_file, zip(file_list,repeat(additional_args)))
+        
+    else:
+        result=[]
+        for filename in tqdm(file_list):
+            result.append(add_weights_single_file(filename, additional_args))
+
+    return result
 
 
 def add_phases_from_pool_map(file, additional_args):

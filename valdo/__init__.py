@@ -6,3 +6,5 @@ from .vae_networks import VAE
 from . import preprocessing
 from . import reindex
 from . import blobs
+from . import tag
+from . import helper
