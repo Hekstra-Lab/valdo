@@ -43,7 +43,6 @@ pip install -e .
 4. If you intend to use the provided Jupyter notebooks, you will also need:
 - `python -m pip install -U pip` (update `pip`)
 - `python -m pip install -U matplotlib` (install `matplotlib`)
-- `conda install -c conda-forge scikit-learn` (install scikit-learn)
 
 Please [file an issue](https://github.com/Hekstra-Lab/drug-screening/issues) if you run into any difficulties!
 
