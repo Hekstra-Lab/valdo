@@ -74,7 +74,7 @@ def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 
                 
                 corr_ref.append(np.corrcoef(mergedi[columns[0]+'_ref'], mergedi[columns[0]+'_input'])[0][1])
             i = np.argmax(corr_ref)
-            output_file = os.path.join(output_folder, os.path.basename(input_file))
+            output_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + f"_{i}" + ".mtz")
             symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
             symopi_asu.write_mtz(output_file)
             reindexed_record.append([i,output_file, corr_ref]) # if i == 0, no reindex
@@ -132,7 +132,7 @@ def reindex_from_pool_map(input_file, additional_args):
             # mergedi = reference_asu.merge(symopi_asu, left_index=True, right_index=True, suffixes=('_ref', '_input'), check_isomorphous=False)
             # corr_ref.append(np.corrcoef(mergedi[columns[0]+'_ref'], mergedi[columns[0]+'_input'])[0][1])
         i = np.argmax(corr_ref)
-        output_file = os.path.join(output_folder, os.path.basename(input_file))
+        output_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + f"_{i}" + ".mtz")
         symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
         symopi_asu.write_mtz(output_file)
         reindexed_record = [i,output_file, corr_ref] # if i == 0, no reindex
