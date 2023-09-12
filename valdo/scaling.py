@@ -232,7 +232,6 @@ class Scaler_pool(object):
         if self.verbose:
             print(f"LS before:  {metric[0]:.1f}", f"LS after: {metric[2]:.0f}", flush=True)
             print(f"Corr before:  {metric[1]:.3f}", f"Corr after: {metric[3]:.3f}", flush=True)
-            print(str_, flush=True)
             print("="*20)
         return [concrete_filename] + metric
 
@@ -240,8 +239,9 @@ class Scaler_pool(object):
     def batch_scaling(self, mtz_path_list, outputmtz_path='./scaled_mtzs/',prefix=None):
 
         additional_args=[outputmtz_path]
+        input_args = zip(mtz_path_list, repeat(additional_args))
         with Pool(self.ncpu) as pool:
-            metrics = pool.starmap(self.batch_scaling_from_pool_map, zip(mtz_path_list, repeat(additional_args)))
+            metrics = pool.starmap(self.batch_scaling_from_pool_map, tqdm(input_args, total=len(mtz_path_list)))
             
         metrics_df = pd.DataFrame(metrics)
         metrics_df.columns=['file', 'start_LS', 'start_corr', 'end_LS', 'end_corr']
