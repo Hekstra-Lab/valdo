@@ -192,13 +192,14 @@ def reindex_files_pool(input_files, reference_file, output_folder, columns=['F-o
     try_ops_triplets = [op.triplet() for op in try_ops] 
     additional_args=[try_ops_triplets, reference_asu, output_folder, columns]
     # print(repeat(additional_args))
+    input_args = zip(input_files, repeat(additional_args))
     if len(try_ops)>1:
         if ncpu is None:
             with Pool() as pool:
-                result = pool.starmap(reindex_from_pool_map, zip(input_files, repeat(additional_args)))
+                result = pool.starmap(reindex_from_pool_map, tqdm(input_args, total=len(input_files)))
         else:
             with Pool(ncpu) as pool:
-                result = pool.starmap(reindex_from_pool_map, zip(input_files, repeat(additional_args)))
+                result = pool.starmap(reindex_from_pool_map, tqdm(input_args, total=len(input_files)))
     else:
         print("No reindexing required!")
         result = None
