@@ -17,16 +17,19 @@ def try_gpu(i=0):
     return torch.device("cpu")
 
 
-def configure_session():
+def configure_session(nfree=1):
+    """
+    nfree : number of free cpus you want to keep in multprocessing, default 1
+        Increase the number if you got cpu memory issue
+    """
     bGPU=torch.cuda.is_available() 
     if bGPU:
         print("We will use GPU for torch operations (esp. VAE training).")
     
-    ncpu=os.cpu_count()
+    ncpu=int(os.environ.get('SLURM_CPUS_PER_TASK', os.cpu_count()))
     print("There are " + str(ncpu) + " CPUs available.")
-    if ncpu > 2:
-        # we keep a free CPU just in case.
-        ncpu=ncpu-1    
+    if ncpu > nfree:
+        ncpu=ncpu-nfree    
         print("For multiprocessing, we will use " + str(ncpu) + " CPUs.")
     else:
         ncpu=1
