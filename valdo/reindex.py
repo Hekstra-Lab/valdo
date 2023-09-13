@@ -9,7 +9,7 @@ from itertools import repeat
 from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors       import KNeighborsRegressor
 import pickle
-from valdo import knn_tools as knn
+#from valdo import knn_tools as knn
 
 
 def weighted_pearsonr(ds1,ds2,data_col="F-obs"):
@@ -30,7 +30,7 @@ def weighted_pearsonr(ds1,ds2,data_col="F-obs"):
     result=grouped.apply(wcorr).mean()
     return result
 
-def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 'SIGF-obs'],wcorr=False, check_isomorphous=False):
+def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 'SIGF-obs'], wcorr=False, check_isomorphous=False):
     """
     Reindexes a list of input MTZ files to a reference MTZ file using gemmi.
 
@@ -80,16 +80,16 @@ def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 
             output_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + f"_{i}" + ".mtz")
             symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
             symopi_asu.write_mtz(output_file)
-            reindexed_record.append([i,output_file, corr_ref]) # if i == 0, no reindex
+            reindexed_record.append([os.path.splitext(os.path.basename(input_file))[0], i, output_file, *corr_ref]) # if i == 0, no reindex
         except Exception as e:
             print(input_file + e)
             continue
-    
-    with open(os.path.join(output_folder, 'reindex_record.pkl'), "wb") as f:
-        # Use the pickle module to dump the list to the file
-        pickle.dump(reindexed_record, f)    
-        
-    return reindexed_record
+    df_record = pd.DataFrame(reindexed_record)
+    df_record.columns=['file_idx', 'best_symop', 'reindexed_file', *[f"CC_symop{i}" for i in range(len(try_ops))]]
+    df_record.to_pickle(os.path.join(output_folder, 'reindex_record.pkl'))
+    print("Reindex statistics record has been saved at:", flush=True)
+    print(os.path.join(output_folder, 'reindex_record.pkl'), flush=True) 
+    return df_record
 
 
 def ds_add_rs(ds, force_rs=False, inplace=True):
@@ -233,7 +233,7 @@ def reindex_from_pool_map(input_file, additional_args):
         output_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + f"_{i}" + ".mtz")
         symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
         symopi_asu.write_mtz(output_file)
-        reindexed_record = [i,output_file, corr_ref] # if i == 0, no reindex
+        reindexed_record = [os.path.splitext(os.path.basename(input_file))[0], i, output_file, *corr_ref] # if i == 0, no reindex
     except Exception as e:
         print("For " + input_file + " the following occurred: \n" )
         print(e, flush=True)
@@ -305,12 +305,13 @@ def reindex_files_pool(input_files, reference_file, output_folder, columns=['F-o
         else:
             with Pool(ncpu) as pool:
                 result = pool.starmap(reindex_from_pool_map, tqdm(input_args, total=len(input_files)))
+
+        df_record = pd.DataFrame(result)
+        df_record.columns=['file_idx', 'best_symop', 'reindexed_file', *[f"CC_symop{i}" for i in range(len(try_ops))]]
+        df_record.to_pickle(os.path.join(output_folder, 'reindex_record.pkl'))
+        print("Reindex statistics record has been saved at:", flush=True)
+        print(os.path.join(output_folder, 'reindex_record.pkl'), flush=True)
+        return df_record
     else:
         print("No reindexing required!")
-        result = None
-        
-    with open(os.path.join(output_folder, 'reindex_record.pkl'), "wb") as f:
-        # Use the pickle module to dump the list to the file
-        pickle.dump(result, f)    
-        
-    return result #reindexed_record
+        return None

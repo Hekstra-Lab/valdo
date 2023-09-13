@@ -130,6 +130,7 @@ class Scaler(object):
             metrics.append([concrete_filename, *metric])
         
         pd.DataFrame(metrics).to_pickle(outputmtz_path + prefix + 'scaling_metrics.pkl')
+        print("Scaling metrics have been saved at:", outputmtz_path + prefix + 'scaling_metrics.pkl', flush=True)
         return metrics
 
 # Multiprocessing variant #
@@ -236,7 +237,7 @@ class Scaler_pool(object):
         return [concrete_filename] + metric
 
     
-    def batch_scaling(self, mtz_path_list, outputmtz_path='./scaled_mtzs/',prefix=None):
+    def batch_scaling(self, mtz_path_list, outputmtz_path='./scaled_mtzs/', prefix=None):
 
         additional_args=[outputmtz_path]
         input_args = zip(mtz_path_list, repeat(additional_args))
@@ -246,5 +247,6 @@ class Scaler_pool(object):
         metrics_df = pd.DataFrame(metrics)
         metrics_df.columns=['file', 'start_LS', 'start_corr', 'end_LS', 'end_corr']
         metrics_df.to_pickle(outputmtz_path + prefix + 'scaling_metrics.pkl')
+        print("Scaling metrics have been saved at:", outputmtz_path + prefix + 'scaling_metrics.pkl', flush=True)
         return metrics_df
     
