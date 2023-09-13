@@ -126,12 +126,48 @@ def sampling(z_mean, z_log_var):
     epsilon = torch.randn(batch, dim, device=z_mean.device)
     return z_mean + torch.exp(0.5 * z_log_var) * epsilon
 
+
 def elbo(mu_z, logvar_z, y_train, y_recons, w_kl):
     nan_bool = torch.isnan(y_train)
     eff_dim = torch.sum(~nan_bool)
     least_squares = torch.sum((y_train[~nan_bool] - y_recons[~nan_bool])**2)
-    log_lkhd = (-0.5*eff_dim*np.log(2*np.pi) - 0.5*least_squares)/y_train.size(0)
-    # KL divergence between two multivariant gaussian
+    log_lkhd = (-0.5*eff_dim*np.log(2*np.pi) - 0.5*least_squares)/y_train.size(0) # we divide at the end because we do a mean across dim 1 for the sample dimension for kldiv
+    # KL divergence between two multivariate gaussians
+    kl_div = torch.mean(torch.sum(0.5*(torch.square(mu_z) + torch.exp(logvar_z) - mu_z.size(1) - logvar_z), dim=1))
+    total_loss = -log_lkhd + w_kl*kl_div
+    return total_loss, -log_lkhd, kl_div
+
+
+def elbo_w_err(mu_z, logvar_z, y_train, y_recons, e_train, w_kl, eps=0.01, verbose=False):
+    nan_bool = torch.isnan(y_train)
+    eff_dim = torch.sum(~nan_bool)
+    least_squares = torch.sum( (y_train[~nan_bool] - y_recons[~nan_bool])**2/(eps+e_train[~nan_bool])**2)
+    if verbose:
+        # print("Eff_dim = " + str(eff_dim))
+        # print("MSE: " + str(least_squares))
+        # print("Smallest non-nan in e_train: " + str(torch.min(e_train[~nan_bool], )))
+        if torch.sum(torch.isnan(y_recons)) > 0:
+            print("Warning: y_recons contains NaNs!")
+        # print(y_train.size(0))
+        # print(str(torch.sum(nan_bool)) +", "+ str(torch.sum(nan_bool2)) +", "+ str(torch.sum(nan_bool3)))
+        
+    log_lkhd = (-0.5*eff_dim*np.log(2*np.pi) -0.5*torch.sum(torch.log((eps+e_train[~nan_bool])**2)) - 0.5*least_squares)/y_train.size(0)
+    # KL divergence between two multivariate gaussians
+    kl_div = torch.mean(torch.sum(0.5*(torch.square(mu_z) + torch.exp(logvar_z) - mu_z.size(1) - logvar_z), dim=1))
+    total_loss = -log_lkhd + w_kl*kl_div
+    return total_loss, -log_lkhd, kl_div
+
+
+def elbo_student_t(mu_z, logvar_z, y_train, y_recons, e_train, w_kl, eps=0.01, stdof=64, verbose=False):
+    nan_bool = torch.isnan(y_train)
+    eff_dim = torch.sum(~nan_bool)
+    t_squares = (y_train[~nan_bool] - y_recons[~nan_bool])**2/(eps+e_train[~nan_bool])**2
+    
+    # print("y_train.size(0): " + str(y_train.size(0)))
+    
+    log_lkhd = -0.5*(stdof+1)*torch.sum(torch.log(1.0+t_squares))/y_train.size(0)
+    # print(log_lkhd)
+    # KL divergence between two multivariate gaussians
     kl_div = torch.mean(torch.sum(0.5*(torch.square(mu_z) + torch.exp(logvar_z) - mu_z.size(1) - logvar_z), dim=1))
     total_loss = -log_lkhd + w_kl*kl_div
     return total_loss, -log_lkhd, kl_div

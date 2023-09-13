@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 
-from .vae_basics import DenseNet, sampling, elbo
+from .vae_basics import DenseNet, sampling, elbo, elbo_w_err, elbo_student_t
 from .helper import try_gpu
 
 from tqdm import tqdm
@@ -116,7 +116,7 @@ class VAE(nn.Module):
             pickle.dump(D, f, pickle.HIGHEST_PROTOCOL)
 
     
-    def train(self, x_train, y_train, optim, x_val=None, y_val=None, epochs=10, batch_size=256, w_kl=1.0):
+    def train(self, x_train, y_train, e_train, optim, x_val=None, y_val=None, e_val=None, epochs=10, batch_size=256, w_kl=1.0,eps=0.05, include_errors=False,stdof=None, verbose=True):
 
         if isinstance(batch_size, int):
             batch_size = [batch_size] * epochs
@@ -124,42 +124,90 @@ class VAE(nn.Module):
             assert len(batch_size) == epochs
         
         if x_val is not None and y_val is not None:
-            dataset_val = TensorDataset(x_val, y_val)
+            if include_errors:
+                dataset_val = TensorDataset(x_val, y_val,e_val)
+            else:
+                dataset_val = TensorDataset(x_val, y_val)
             sampler = RandomSampler(dataset_val)
             valloader = DataLoader(dataset_val, batch_size=256, sampler=sampler)
         
-        dataset_train = TensorDataset(x_train, y_train)
+        dataset_train = TensorDataset(x_train, y_train, e_train)
         for epoch in range(epochs):
             trainloader = DataLoader(dataset_train, batch_size=batch_size[epoch], shuffle=True)
-            progress_bar = tqdm(trainloader, desc=f"Epoch {epoch+1}")
-            
-            for x_batch, y_batch in progress_bar:
-                x_batch = x_batch.to(self.device)
-                y_batch = y_batch.to(self.device)
-                optim.zero_grad()
-                encoding = self.encoder(x_batch)
-                z_mean, z_log_var = encoding[:, :self.dim_z], encoding[:, self.dim_z:]
-                z = sampling(z_mean, z_log_var)
-                recons_x = self.decoder(z)
-                loss_train, nll_train, kl_train = elbo(z_mean, z_log_var, y_batch, recons_x, w_kl)
-                loss_train.backward()
-                optim.step()
-                
-                if x_val is not None and y_val is not None:
-                    x_batch_test, y_batch_test = next(iter(valloader))
-                    x_batch_test = x_batch_test.to(self.device)
-                    y_batch_test = y_batch_test.to(self.device)
-                    
-                    encoding_test = self.encoder(x_batch_test)
-                    z_mean_test, z_log_var_test = encoding_test[:, :self.dim_z], encoding_test[:, self.dim_z:]
-                    z_test = sampling(z_mean_test, z_log_var_test)
-                    recons_x_test = self.decoder(z_test)
-                    loss_test, nll_test, kl_test = elbo(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, w_kl)
+            progress_bar = tqdm(trainloader, desc=f"Ep {epoch+1}")
 
-                    loss_np, loss_test_np = loss_train.item(), loss_test.item()
-                    progress_bar.set_postfix(Trainloss=loss_np, Testloss=loss_test_np, memory=torch.cuda.memory_allocated()/1e9)
-                    self.loss_train.append([loss_np, nll_train.item(), kl_train.item(), loss_test_np, nll_test.item(), kl_test.item()])  
-                else:
-                    loss_np = loss_train.item()
-                    progress_bar.set_postfix(Trainloss=loss_np, memory=torch.cuda.memory_allocated()/1e9)
-                    self.loss_train.append([loss_np, nll_train.item(), kl_train.item()])
+            if include_errors:
+                for x_batch, y_batch, e_batch in progress_bar:
+                    x_batch = x_batch.to(self.device)
+                    y_batch = y_batch.to(self.device)
+                    e_batch = e_batch.to(self.device)
+                    optim.zero_grad()
+                    encoding = self.encoder(x_batch)
+                    z_mean, z_log_var = encoding[:, :self.dim_z], encoding[:, self.dim_z:]
+                    z = sampling(z_mean, z_log_var)
+                    recons_x = self.decoder(z)
+
+                    if stdof is None:
+                        loss_train, nll_train, kl_train = elbo_w_err(    z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl,eps=eps)                        
+                    else:
+                        loss_train, nll_train, kl_train = elbo_student_t(z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl,eps=eps, stdof=stdof)
+                        
+                    loss_train.backward()
+                    optim.step()
+                    
+                    if x_val is not None and y_val is not None:
+                        x_batch_test, y_batch_test, e_batch_test = next(iter(valloader))
+                        x_batch_test = x_batch_test.to(self.device)
+                        y_batch_test = y_batch_test.to(self.device)
+                        e_batch_test = e_batch_test.to(self.device)
+                        # print("e_batch_test: " + str(e_batch_test.size()))
+                        
+                        encoding_test = self.encoder(x_batch_test)
+                        z_mean_test, z_log_var_test = encoding_test[:, :self.dim_z], encoding_test[:, self.dim_z:]
+                        z_test = sampling(z_mean_test, z_log_var_test)
+                        recons_x_test = self.decoder(z_test)
+
+                        if stdof is None:
+                            loss_test, nll_test, kl_test = elbo_w_err(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,eps=eps, verbose=verbose)
+                        else:
+                            loss_test, nll_test, kl_test = elbo_student_t(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,eps=eps, stdof=stdof, verbose=verbose)
+    
+                        loss_np, loss_test_np = loss_train.item(), loss_test.item()
+                        # abbreviated to fit display...
+                        progress_bar.set_postfix(Train=loss_np, Test=loss_test_np, mem=torch.cuda.memory_allocated()/1e9)
+                        self.loss_train.append([loss_np, nll_train.item(), kl_train.item(), loss_test_np, nll_test.item(), kl_test.item()])  
+                    else:
+                        loss_np = loss_train.item()
+                        progress_bar.set_postfix(Trainloss=loss_np, memory=torch.cuda.memory_allocated()/1e9)
+                        self.loss_train.append([loss_np, nll_train.item(), kl_train.item()])
+            else: # no sigF errors to take into account
+                for x_batch, y_batch, _ in progress_bar:
+                    x_batch = x_batch.to(self.device)
+                    y_batch = y_batch.to(self.device)
+                    optim.zero_grad()
+                    encoding = self.encoder(x_batch)
+                    z_mean, z_log_var = encoding[:, :self.dim_z], encoding[:, self.dim_z:]
+                    z = sampling(z_mean, z_log_var)
+                    recons_x = self.decoder(z)
+                    loss_train, nll_train, kl_train = elbo(z_mean, z_log_var, y_batch, recons_x, w_kl)
+                    loss_train.backward()
+                    optim.step()
+                    
+                    if x_val is not None and y_val is not None:
+                        x_batch_test, y_batch_test = next(iter(valloader))
+                        x_batch_test = x_batch_test.to(self.device)
+                        y_batch_test = y_batch_test.to(self.device)
+                        
+                        encoding_test = self.encoder(x_batch_test)
+                        z_mean_test, z_log_var_test = encoding_test[:, :self.dim_z], encoding_test[:, self.dim_z:]
+                        z_test = sampling(z_mean_test, z_log_var_test)
+                        recons_x_test = self.decoder(z_test)
+
+                        loss_test, nll_test, kl_test = elbo(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, w_kl)
+                        loss_np, loss_test_np = loss_train.item(), loss_test.item()
+                        progress_bar.set_postfix(Train=loss_np, Test=loss_test_np, mem=torch.cuda.memory_allocated()/1e9)
+                        self.loss_train.append([loss_np, nll_train.item(), kl_train.item(), loss_test_np, nll_test.item(), kl_test.item()])  
+                    else:
+                        loss_np = loss_train.item()
+                        progress_bar.set_postfix(Trainloss=loss_np, memory=torch.cuda.memory_allocated()/1e9)
+                        self.loss_train.append([loss_np, nll_train.item(), kl_train.item()])

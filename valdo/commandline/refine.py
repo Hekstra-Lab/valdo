@@ -9,7 +9,7 @@ Refine all reindexed mtz files starting from a single apo model
 
 import argparse
 import subprocess
-import glob
+import glob, os
 
 class ArgumentParser(argparse.ArgumentParser):
     def __init__(self):
@@ -43,19 +43,21 @@ def main():
         pdb_files.sort()
         mtz_files.sort()
         for pdbfile, mtzfile in zip(pdb_files, mtz_files):
-            mtz_name = mtzfile.split('/')[-1][:-4]
+            mtz_name = os.path.splitext(os.path.basename(mtzfile))[0]
+            output_prefix = os.path.join(args.output, f'refine_{mtz_name}')
             subprocess.run(["phenix.refine", 
                             pdbfile, 
                             mtzfile, 
-                            f"output.prefix={args.output}+{mtz_name}",
+                            f"output.prefix={output_prefix})",
                             f"{args.eff}"])
     else:
         print("Only one PDB file is provided, will be used for all refinement initialization!", flush=True)
         pdbfile = pdb_files[0]
         for mtzfile in mtz_files:
-            mtz_name = mtzfile.split('/')[-1][:-4]
+            mtz_name = os.path.splitext(os.path.basename(mtzfile))[0]
+            output_prefix = os.path.join(args.output, f'refine_{mtz_name}')
             subprocess.run(["phenix.refine", 
                             pdbfile, 
                             mtzfile, 
-                            f"output.prefix={args.output}+{mtz_name}",
+                            f"output.prefix={output_prefix}",
                             f"{args.eff}"])

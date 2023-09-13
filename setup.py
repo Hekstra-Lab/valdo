@@ -21,7 +21,8 @@ setup(name="rs-valdo",
     install_requires=[
         "torch>=1.13.0",
         "reciprocalspaceship>=0.9.18",
-        "tqdm"
+        "tqdm",
+        "scikit-learn"
     ],
     entry_points={
         "console_scripts": [
