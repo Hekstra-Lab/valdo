@@ -286,11 +286,12 @@ def rescale_pool(recons_path, intersection_path, union_path, input_files, info_f
         os.makedirs(output_folder)   
 
     additional_args=[recons_df, mean, sd, amplitude_col, output_folder]
+    input_args = zip(input_files, repeat(additional_args))
     if ncpu is not None:
         with Pool(ncpu) as pool:
-            results = pool.starmap(rescale_from_pool_map, zip(input_files, repeat(additional_args)))
+            results = pool.starmap(rescale_from_pool_map, tqdm(input_args, total=len(input_files)))
     else:
         with Pool() as pool:
-            results = pool.starmap(rescale_from_pool_map, zip(input_files, repeat(additional_args)))
+            results = pool.starmap(rescale_from_pool_map, tqdm(input_args, total=len(input_files)))
 
     print("Done rescaling.")
