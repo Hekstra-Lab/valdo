@@ -9,7 +9,7 @@ from itertools import repeat
 from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors       import KNeighborsRegressor
 import pickle
-#from valdo import knn_tools as knn
+# from valdo import knn_tools as knn
 
 
 def weighted_pearsonr(ds1,ds2,data_col="F-obs"):
@@ -30,7 +30,7 @@ def weighted_pearsonr(ds1,ds2,data_col="F-obs"):
     result=grouped.apply(wcorr).mean()
     return result
 
-def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 'SIGF-obs'], wcorr=False, check_isomorphous=False):
+def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 'SIGF-obs'], wcorr=False, check_isomorphous=False, cc_min_dif=0.2):
     """
     Reindexes a list of input MTZ files to a reference MTZ file using gemmi.
 
@@ -76,16 +76,21 @@ def reindex_files(input_files, reference_file, output_folder, columns=['F-obs', 
                     mergedi = reference_asu.merge(symopi_asu, left_index=True, right_index=True, suffixes=('_ref', '_input'), check_isomorphous=check_isomorphous)
                     corr_ref.append(np.corrcoef(mergedi[columns[0]+'_ref'], mergedi[columns[0]+'_input'])[0][1])
 
-            i = np.argmax(corr_ref)
-            output_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + f"_{i}" + ".mtz")
-            symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
-            symopi_asu.write_mtz(output_file)
-            reindexed_record.append([os.path.splitext(os.path.basename(input_file))[0], i, output_file, *corr_ref]) # if i == 0, no reindex
+            argorder = np.argsort(corr_ref)[::-1]
+            max_cc = corr_ref[argorder[0]]
+            n_duplicates = 0
+            for i in argorder:
+                if max_cc - corr_ref[i] < cc_min_dif:
+                    output_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + f"_{i}" + ".mtz")
+                    symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
+                    symopi_asu.write_mtz(output_file)
+                    n_duplicates += 1
+            reindexed_record.append([os.path.splitext(os.path.basename(input_file))[0], argorder[0], n_duplicates, output_file, *corr_ref]) # if i == 0, no reindex
         except Exception as e:
             print(input_file + e)
             continue
     df_record = pd.DataFrame(reindexed_record)
-    df_record.columns=['file_idx', 'best_symop', 'reindexed_file', *[f"CC_symop{i}" for i in range(len(try_ops))]]
+    df_record.columns=['file_idx', 'best_symop', 'num_duplicates', 'reindexed_file', *[f"CC_symop{i}" for i in range(len(try_ops))]]
     df_record.to_pickle(os.path.join(output_folder, 'reindex_record.pkl'))
     print("Reindex statistics record has been saved at:", flush=True)
     print(os.path.join(output_folder, 'reindex_record.pkl'), flush=True) 
@@ -213,6 +218,7 @@ def reindex_from_pool_map(input_file, additional_args):
     columns       = additional_args[3]
     wcorr         = additional_args[4]
     check_isomorphous = additional_args[5]
+    cc_min_dif = additional_args[6]
 
     # Reindex each input MTZ file with all possible ops
     try:
@@ -228,12 +234,16 @@ def reindex_from_pool_map(input_file, additional_args):
             else:
                 mergedi = reference_asu.merge(symopi_asu, left_index=True, right_index=True, suffixes=('_ref', '_input'), check_isomorphous=check_isomorphous)
                 corr_ref.append(np.corrcoef(mergedi[columns[0]+'_ref'], mergedi[columns[0]+'_input'])[0][1])
-        
-        i = np.argmax(corr_ref)
-        output_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + f"_{i}" + ".mtz")
-        symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
-        symopi_asu.write_mtz(output_file)
-        reindexed_record = [os.path.splitext(os.path.basename(input_file))[0], i, output_file, *corr_ref] # if i == 0, no reindex
+        argorder = np.argsort(corr_ref)[::-1]
+        max_cc = corr_ref[argorder[0]]
+        n_duplicates = 0
+        for i in argorder:
+            if max_cc - corr_ref[i] < cc_min_dif:
+                output_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + f"_{i}" + ".mtz")
+                symopi_asu = input_df.apply_symop(try_ops[i]).hkl_to_asu()
+                symopi_asu.write_mtz(output_file)
+                n_duplicates += 1
+        reindexed_record = [os.path.splitext(os.path.basename(input_file))[0], argorder[0], n_duplicates, output_file, *corr_ref] # if i == 0, no reindex
     except Exception as e:
         print("For " + input_file + " the following occurred: \n" )
         print(e, flush=True)
@@ -267,7 +277,7 @@ def find_alt_ops(reference_mtz, columns):
         try_ops = unit_ops + alt_ops
     return try_ops, reference_asu
 
-def reindex_files_pool(input_files, reference_file, output_folder, columns=['F-obs', 'SIGF-obs'],check_isomorphous=False, wcorr=True,ncpu=None):
+def reindex_files_pool(input_files, reference_file, output_folder, columns=['F-obs', 'SIGF-obs'], check_isomorphous=False, wcorr=True, ncpu=None, cc_min_dif=0.2):
     """
     Reindexes a list of input MTZ files to a reference MTZ file using gemmi.
     For use with multiprocessing
@@ -295,7 +305,7 @@ def reindex_files_pool(input_files, reference_file, output_folder, columns=['F-o
     
     # since we can't pickle gemmi symops
     try_ops_triplets = [op.triplet() for op in try_ops] 
-    additional_args=[try_ops_triplets, reference_asu, output_folder, columns,wcorr,check_isomorphous]
+    additional_args=[try_ops_triplets, reference_asu, output_folder, columns, wcorr, check_isomorphous, cc_min_dif]
     # print(repeat(additional_args))
     input_args = zip(input_files, repeat(additional_args))
     if len(try_ops)>1:
@@ -307,7 +317,7 @@ def reindex_files_pool(input_files, reference_file, output_folder, columns=['F-o
                 result = pool.starmap(reindex_from_pool_map, tqdm(input_args, total=len(input_files)))
 
         df_record = pd.DataFrame(result)
-        df_record.columns=['file_idx', 'best_symop', 'reindexed_file', *[f"CC_symop{i}" for i in range(len(try_ops))]]
+        df_record.columns=['file_idx', 'best_symop', 'num_duplicates', 'reindexed_file', *[f"CC_symop{i}" for i in range(len(try_ops))]]
         df_record.to_pickle(os.path.join(output_folder, 'reindex_record.pkl'))
         print("Reindex statistics record has been saved at:", flush=True)
         print(os.path.join(output_folder, 'reindex_record.pkl'), flush=True)
