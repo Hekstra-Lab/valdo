@@ -103,7 +103,7 @@ def check_blob_for_lig(row, additional_args):
         return row
     
     cenx, ceny, cenz = row['cenx'], row['ceny'], row['cenz']
-    atoms_df = find_nearby_atoms({"x": cenx, "y": ceny, "z": cenz}, structure_path + sample + '.pdb', sample, row['radius'])
+    atoms_df = find_nearby_atoms({"x": cenx, "y": ceny, "z": cenz}, glob.glob(os.path.join(structure_path, f'{sample.split("_")[0]}.pdb'))[0], sample, row['radius'])
 
     if len(atoms_df) < 1:
         return row
@@ -115,7 +115,7 @@ def check_blob_for_lig(row, additional_args):
     return row
 
     
-def tag_lig_blobs(df, structure_path,ncpu=1):
+def tag_lig_blobs(df, structure_path, ncpu=1):
     """
     Tags the blobs in the DataFrame 'df' that contain ligands based on the nearby atoms found in PDB files.
 
@@ -327,7 +327,7 @@ def check_blob_for_nearby_seqid(row, additional_args):
     sample = row["sample"]
     
     cenx, ceny, cenz = row['cenx'], row['ceny'], row['cenz']
-    atoms_df = find_nearby_atoms({"x": cenx, "y": ceny, "z": cenz}, structure_path + sample + '.pdb', sample, radius)
+    atoms_df = find_nearby_atoms({"x": cenx, "y": ceny, "z": cenz}, glob.glob(os.path.join(structure_path, f'*{sample}*.pdb'))[0], sample, radius)
 
     row[tag]=0
     if len(atoms_df) < 1:
