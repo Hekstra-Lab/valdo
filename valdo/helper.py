@@ -145,7 +145,7 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
     for file in tqdm(file_list):
         current = rs.read_mtz(file)
         try:
-            phases_df = rs.read_mtz(apo_mtzs_path + os.path.basename(file))    
+            phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz")))   
         except:
             no_phases_files.append(file)
             continue
@@ -232,7 +232,7 @@ def add_phases_from_pool_map(file, additional_args):
     current = rs.read_mtz(file)
     success=False
     try:
-        phases_df = rs.read_mtz(apo_mtzs_path + os.path.basename(file)) 
+        phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])
         # print(phases_df.columns)
         current[phase_2FOFC_col_out] = phases_df[phase_2FOFC_col_in]
         current[phase_FOFC_col_out]  = phases_df[phase_FOFC_col_in]
@@ -267,15 +267,14 @@ def add_phases_pool(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path
     """
 
     additional_args=[apo_mtzs_path, vae_reconstructed_with_phases_path, phase_2FOFC_col_out, phase_FOFC_col_out,phase_2FOFC_col_in, phase_FOFC_col_in]
-    
+    input_args = zip(file_list, repeat(additional_args))
     with Pool(ncpu) as pool:
-        metrics = pool.starmap(add_phases_from_pool_map, zip(file_list, repeat(additional_args)))
+        metrics = pool.starmap(add_phases_from_pool_map, tqdm(input_args, total=len(file_list)))
             
         metrics_df = pd.DataFrame(metrics)
         metrics_df.columns=['file', 'success']
-        metrics_df.to_pickle(vae_reconstructed_with_phases_path + prefix + 'add_phases_report.pkl')
     
-    return metrics_df
+    return metrics_df[~metrics_df['success']]['file'].tolist()
 
     
         
