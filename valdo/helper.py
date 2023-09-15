@@ -145,7 +145,7 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
     for file in tqdm(file_list):
         current = rs.read_mtz(file)
         try:
-            phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz")))   
+            phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])   
         except:
             no_phases_files.append(file)
             continue
