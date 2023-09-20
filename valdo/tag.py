@@ -130,9 +130,10 @@ def tag_lig_blobs(df, structure_path, ncpu=1):
 
     # df['ligand']=0
     additional_args=[structure_path]
+    input_args = zip(df.to_dict('records'),repeat(additional_args))
     if ncpu>1:
         with Pool(ncpu) as pool:
-            result = pool.starmap(check_blob_for_lig, zip(df.to_dict('records'),repeat(additional_args)))
+            result = pool.starmap(check_blob_for_lig, tqdm(input_args, total=len(df)))
         
         # merge results back together
         df = pd.DataFrame.from_records(result)
@@ -203,9 +204,10 @@ def determine_locations(df, folder, ncpu=1):
     """
 
     additional_args=[folder]
+    input_args = zip(df.to_dict('records'),repeat(additional_args))
     if ncpu>1:
         with Pool(ncpu) as pool:
-            result = pool.starmap(apply_determine_locations, zip(df.to_dict('records'),repeat(additional_args)))
+            result = pool.starmap(apply_determine_locations, tqdm(input_args, total=len(df)))
             result_df=pd.concat(result,axis=1).transpose()
 
         if not df.index.equals(result_df.index):
@@ -366,10 +368,11 @@ def tag_blobs_around_seqid(df, structure_path, radius=3,tag='cys215', focal_seqi
     
     df[tag]=0
     additional_args=[structure_path,radius,focal_seqid,tag]
+    input_args = zip(df.to_dict('records'),repeat(additional_args))
     if ncpu>1:
         with Pool(ncpu) as pool:
-            result = pool.starmap(check_blob_for_nearby_seqid, zip(df.to_dict('records'),repeat(additional_args)))
-        
+            result = pool.starmap(check_blob_for_nearby_seqid, tqdm(input_args, total=len(df)))
+
         # merge results back together
         # print(result)
         df_result = pd.DataFrame.from_records(result)

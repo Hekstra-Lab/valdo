@@ -200,8 +200,9 @@ def add_weights(file_list, sigF_col="SIGF-obs", diff_col="diff",sigdF_pct=99, ab
     
     additional_args=[sigF_col, diff_col, sigdF_pct, absdF_pct, redo]
     if ncpu>1:
+        input_args = zip(file_list,repeat(additional_args))
         with Pool(ncpu) as pool:
-            result = pool.starmap(add_weights_single_file, zip(file_list,repeat(additional_args)))
+            result = pool.starmap(add_weights_single_file, tqdm(input_args, total=len(file_list)))
         
     else:
         result=[]
