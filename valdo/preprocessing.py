@@ -181,7 +181,7 @@ def generate_vae_io(intersection_path, union_path, sigF_path, io_folder, prefix=
     print("Created starting files for VAE in " + io_folder + " with prefix = " + prefix)
     
     
-def rescale(recons_path, intersection_path, union_path, input_files, info_folder, output_folder, amplitude_col='F-obs-scaled'):
+def rescale(recons_path, intersection_path, union_path, input_files, info_folder, output_folder, amplitude_col='F-obs-scaled', return_full_recon=False):
     
     """
     Re-scales datasets accordingly to recover the outputs in the original scale in column 'recons' and calculates the difference in amplitudes in column 'diff'.
@@ -197,20 +197,31 @@ def rescale(recons_path, intersection_path, union_path, input_files, info_folder
         output_folder (str): Path to the folder where the reconstructed data will be saved.
         
         amplitude_col (str): Column in MTZ file that contains structure factor amplitudes to calculate the difference column.
+        return_full_recon (bool): Whether or not to also output an MTZ with all of the reconstructed amplitudes, 
+        not just for the Miller indices for which the dataset of interest has observations (False by default).
 
     Returns:
         None
 
     """
     
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)   
+    if return_full_recon:
+        full_recon_output_folder=output_folder+"full_recon/"
+        if not os.path.exists(full_recon_output_folder):
+            os.makedirs(full_recon_output_folder)   
+
     recons = np.load(recons_path)
     intersection = pd.read_pickle(intersection_path)
     union = pd.read_pickle(union_path)
+    # print(intersection.info()) # columns are the dataset IDs; rows the Miller indices of the intersection
     
     recons_df = pd.DataFrame(recons.T, index=union.index, columns=intersection.columns)
+    
     mean = pd.read_pickle(os.path.join(info_folder, 'union_mean.pkl'))
     sd = pd.read_pickle(os.path.join(info_folder, 'union_sd.pkl'))
-    
+
     for file in tqdm(input_files):
         
         col = recons_df[os.path.basename(file)]
@@ -222,13 +233,21 @@ def rescale(recons_path, intersection_path, union_path, input_files, info_folder
         recons_col = rs.DataSeries(recons_col, dtype="SFAmplitude")
 
         ds['recons'] = recons_col
-
         ds['diff'] = ds[amplitude_col] - ds['recons']
-        
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)   
-
         ds.write_mtz(os.path.join(output_folder, os.path.basename(file)))
+
+        if return_full_recon:
+            base_name=os.path.basename(file)[:-4]+"_full_recon.mtz"
+            recons_col_full = col * sd + mean
+
+            tmp=pd.DataFrame(index=union.index)
+            tmp["recons"]=recons_col_full
+            
+            full_ds = rs.DataSet(tmp, spacegroup=ds.spacegroup, cell=ds.cell, merged=ds.merged)
+            full_ds["recons"]=full_ds["recons"].astype("SFAmplitude")
+            full_ds.infer_mtz_dtypes()
+            full_ds.write_mtz(os.path.join(full_recon_output_folder, base_name))
+            
 
 # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ #
 
@@ -238,6 +257,9 @@ def rescale_from_pool_map(input_file, additional_args):
     sd            = additional_args[2]
     amplitude_col = additional_args[3]
     output_folder = additional_args[4]
+    full_recon    = additional_args[5]
+    full_recon_output_folder = additional_args[6]
+    union_index   = additional_args[7]
     
     col = recons_df[os.path.basename(input_file)]
     ds = rs.read_mtz(input_file)
@@ -250,9 +272,22 @@ def rescale_from_pool_map(input_file, additional_args):
     ds['diff'] = ds[amplitude_col] - ds['recons']
     
     ds.write_mtz(os.path.join(output_folder, os.path.basename(input_file)))
+
+    if full_recon:
+        base_name=os.path.basename(input_file)[:-4]+"_full_recon.mtz"
+        recons_col_full = col * sd + mean
+
+        tmp=pd.DataFrame(index=union_index)
+        tmp["recons"]=recons_col_full
+        
+        full_ds = rs.DataSet(tmp, spacegroup=ds.spacegroup, cell=ds.cell, merged=ds.merged)
+        full_ds["recons"]=full_ds["recons"].astype("SFAmplitude")
+        full_ds.infer_mtz_dtypes()
+        full_ds.write_mtz(os.path.join(full_recon_output_folder, base_name))
+
     return 1
 
-def rescale_pool(recons_path, intersection_path, union_path, input_files, info_folder, output_folder, amplitude_col='F-obs-scaled',ncpu=None):
+def rescale_pool(recons_path, intersection_path, union_path, input_files, info_folder, output_folder, amplitude_col='F-obs-scaled', return_full_recon=False, ncpu=None):
     
     """
     Re-scales datasets accordingly to recover the outputs in the original scale in column 'recons' and calculates the difference in amplitudes in column 'diff'.
@@ -268,12 +303,23 @@ def rescale_pool(recons_path, intersection_path, union_path, input_files, info_f
         output_folder (str): Path to the folder where the reconstructed data will be saved.
         
         amplitude_col (str): Column in MTZ file that contains structure factor amplitudes to calculate the difference column.
+        return_full_recon (bool): Whether or not to also output an MTZ with all of the reconstructed amplitudes, 
+        not just for the Miller indices for which the dataset of interest has observations (False by default).
 
+        ncpu (int): number of CPU to allocate for multiprocessing (default: None: whatever is available).
+        
     Returns:
         None
 
     """
     
+    full_recon_output_folder=output_folder+"full_recon/" # only used if return_full_recon == True
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)   
+    if return_full_recon:
+        if not os.path.exists(full_recon_output_folder):
+            os.makedirs(full_recon_output_folder)   
+
     recons = np.load(recons_path)
     intersection = pd.read_pickle(intersection_path)
     union = pd.read_pickle(union_path)
@@ -282,10 +328,7 @@ def rescale_pool(recons_path, intersection_path, union_path, input_files, info_f
     mean = pd.read_pickle(os.path.join(info_folder, 'union_mean.pkl'))
     sd = pd.read_pickle(os.path.join(info_folder, 'union_sd.pkl'))
 
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)   
-
-    additional_args=[recons_df, mean, sd, amplitude_col, output_folder]
+    additional_args=[recons_df, mean, sd, amplitude_col, output_folder, return_full_recon, full_recon_output_folder, union.index]
     input_args = zip(input_files, repeat(additional_args))
     if ncpu is not None:
         with Pool(ncpu) as pool:
