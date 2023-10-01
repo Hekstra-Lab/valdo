@@ -82,20 +82,20 @@ class VAE(nn.Module):
         x = self.decoder(z)
         return x
 
-    def reconstruct(self, input_x,ml_recon=False, repeats=1):
+    def reconstruct(self, input_x, ml_recon=False, repeats=1):
         '''
         Reconstructs output from the VAE
 
         Parameters :
         ------------
-        input_x (): input for the VAE
+        input_x (tensor): input for the VAE
         ml_recon (bool): Flag which determined whether to return the most likely reconstruction (if True),
-        or a randomly sampled one (default: False)
+        or a randomly sampled one from the posterior (default: False)
         repeats (int) : number of times to sample output from the VAE (default 1) 
 
         Returns :
         ---------
-        recons (array or list of arrays): output from the decoder.
+        recons (tensors): output from the decoder.
         
         '''
         encoding = self.encoder(input_x.to(self.device))
@@ -110,10 +110,8 @@ class VAE(nn.Module):
             else:
                 recons = self.decoder(z_mean)
         else:
-            recons=[]
-            for k in range(repeats):
-                z = sampling(z_mean, z_log_var)
-                recons.append(self.decoder(z))
+            z = sampling(z_mean, z_log_var, repeats=repeats)
+            recons=self.decoder(z)
                 
         return recons
         
@@ -144,7 +142,7 @@ class VAE(nn.Module):
             pickle.dump(D, f, pickle.HIGHEST_PROTOCOL)
 
     
-    def train(self, x_train, y_train, e_train, optim, x_val=None, y_val=None, e_val=None, epochs=10, batch_size=256, w_kl=1.0,eps=0.05, include_errors=False,stdof=None, verbose=True):
+    def train(self, x_train, y_train, e_train, optim, x_val=None, y_val=None, e_val=None, epochs=10, batch_size=256, w_kl=1.0, eps=0.05, include_errors=False, stdof=None, verbose=True):
 
         if isinstance(batch_size, int):
             batch_size = [batch_size] * epochs
