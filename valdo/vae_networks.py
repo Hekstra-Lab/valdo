@@ -82,11 +82,39 @@ class VAE(nn.Module):
         x = self.decoder(z)
         return x
 
-    def reconstruct(self, input_x):
+    def reconstruct(self, input_x,ml_recon=False, repeats=1):
+        '''
+        Reconstructs output from the VAE
+
+        Parameters :
+        ------------
+        input_x (): input for the VAE
+        ml_recon (bool): Flag which determined whether to return the most likely reconstruction (if True),
+        or a randomly sampled one (default: False)
+        repeats (int) : number of times to sample output from the VAE (default 1) 
+
+        Returns :
+        ---------
+        recons (array or list of arrays): output from the decoder.
+        
+        '''
         encoding = self.encoder(input_x.to(self.device))
         z_mean, z_log_var = encoding[:, :self.dim_z], encoding[:, self.dim_z:]
-        z = sampling(z_mean, z_log_var)
-        recons = self.decoder(z)
+        
+        if ml_recon:
+            repeats=1
+        if repeats==1:
+            if ml_recon==False:
+                z = sampling(z_mean, z_log_var)
+                recons = self.decoder(z)
+            else:
+                recons = self.decoder(z_mean)
+        else:
+            recons=[]
+            for k in range(repeats):
+                z = sampling(z_mean, z_log_var)
+                recons.append(self.decoder(z))
+                
         return recons
         
     @classmethod

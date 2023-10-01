@@ -159,10 +159,11 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
 
 def add_weights_single_file(file, additional_args):
     sigF_col =additional_args[0]
-    diff_col =additional_args[1]
-    sigdF_pct=additional_args[2]
-    absdF_pct=additional_args[3]
-    redo     =additional_args[4]
+    sigF_col_recons=additional_args[1]
+    diff_col =additional_args[2]
+    sigdF_pct=additional_args[3]
+    absdF_pct=additional_args[4]
+    redo     =additional_args[5]
 
     success=0
     try:
@@ -175,6 +176,9 @@ def add_weights_single_file(file, additional_args):
     else:
         # print("Calculating weights for " + file)
         sigdF=current[sigF_col].to_numpy()
+        # include reconstruction errors iff we have them.
+        if sigF_col_recons in current:
+            sigdF=np.sqrt(sigdF**2 + current[sigF_col_recons].to_numpy()**2)
         absdF=np.abs(current[diff_col].to_numpy())
         
         w = 1+(sigdF/np.percentile(sigdF,sigdF_pct))**2+(absdF/np.percentile(absdF,absdF_pct))**2
@@ -188,17 +192,26 @@ def add_weights_single_file(file, additional_args):
 
     return success
 
-def add_weights(file_list, sigF_col="SIGF-obs", diff_col="diff",sigdF_pct=99, absdF_pct=99.9, redo=True, ncpu=1):
+def add_weights(file_list, sigF_col="SIGF-obs", sigF_col_recons="SIG_recons", diff_col="diff",sigdF_pct=90.0, absdF_pct=99.99, redo=True, ncpu=1):
     """
     Add difference map coefficient weights to the corresponding files in file_list in vae_reconstructed_with_phases_path. 
         Parameters:
+        -----------
             file_list (list of str) : list of input files (complete path!)
-
+            sigF_col (str) : name of column containing error estimates for measured amplitudes
+            sigF_col_recons (str) : name of column containing error estimates for reconstructed ampls (default: "SIG_recons, as produced by the VAE reconstruction method)
+            diff_col (str): name of column for output Fobs-Frecon (default: "diff")
+            sigdF_pct (float): value of sig(deltaF) at which weights substantially diminish
+            absdF_pct (float): value of abs(deltaF) at which weights substantially diminish
+            redo (bool): whether to override existing weights (default: True)
+            ncpu (int): Number of CPUs to use for multiprocessing (default: 1)
+            
         Returns:
+        --------
             list of input files for which no matching file with phases could be found.
     """
     
-    additional_args=[sigF_col, diff_col, sigdF_pct, absdF_pct, redo]
+    additional_args=[sigF_col, sigF_col_recons, diff_col, sigdF_pct, absdF_pct, redo]
     if ncpu>1:
         input_args = zip(file_list,repeat(additional_args))
         with Pool(ncpu) as pool:

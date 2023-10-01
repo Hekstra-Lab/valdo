@@ -217,10 +217,21 @@ def rescale(recons_path, intersection_path, union_path, input_files, info_folder
     union = pd.read_pickle(union_path)
     # print(intersection.info()) # columns are the dataset IDs; rows the Miller indices of the intersection
     
-    recons_df = pd.DataFrame(recons.T, index=union.index, columns=intersection.columns)
+    print(recons.shape)
+    if recons.shape[0]==2: # mean and std in array
+        recons_df = pd.DataFrame(np.squeeze(recons[0,:,:]).T, \
+                                      index=union.index, \
+                                      columns=intersection.columns)
+        recons_df_std  = pd.DataFrame(np.squeeze(recons[1,:,:]).T, \
+                                      index=union.index, \
+                                      columns=intersection.columns)
+        include_std=True
+    else:
+        recons_df = pd.DataFrame(recons.T, index=union.index, columns=intersection.columns)
+        include_std=False
     
     mean = pd.read_pickle(os.path.join(info_folder, 'union_mean.pkl'))
-    sd = pd.read_pickle(os.path.join(info_folder, 'union_sd.pkl'))
+    sd   = pd.read_pickle(os.path.join(info_folder, 'union_sd.pkl'))
 
     for file in tqdm(input_files):
         
@@ -234,17 +245,30 @@ def rescale(recons_path, intersection_path, union_path, input_files, info_folder
 
         ds['recons'] = recons_col
         ds['diff'] = ds[amplitude_col] - ds['recons']
+    
+        # if a second list element is present, it is the stdev across VAE sampling
+        if include_std:
+            std_col = recons_df_std[os.path.basename(file)]
+            recons_std_col = std_col[idx] * sd[idx]
+            recons_std_col = rs.DataSeries(recons_std_col, dtype="Stddev")
+            ds['SIG_recons'] = recons_std_col
+        
         ds.write_mtz(os.path.join(output_folder, os.path.basename(file)))
 
         if return_full_recon:
             base_name=os.path.basename(file)[:-4]+"_full_recon.mtz"
             recons_col_full = col * sd + mean
-
+    
             tmp=pd.DataFrame(index=union.index)
             tmp["recons"]=recons_col_full
+            tmp["recons"]=tmp["recons"].astype("SFAmplitude")
+    
+            if include_std:
+                recons_col_full_std = std_col * sd
+                tmp["SIG_recons"]=recons_col_full_std
+                tmp["SIG_recons"]=tmp["SIG_recons"].astype("Stddev")
             
             full_ds = rs.DataSet(tmp, spacegroup=ds.spacegroup, cell=ds.cell, merged=ds.merged)
-            full_ds["recons"]=full_ds["recons"].astype("SFAmplitude")
             full_ds.infer_mtz_dtypes()
             full_ds.write_mtz(os.path.join(full_recon_output_folder, base_name))
             
@@ -252,7 +276,7 @@ def rescale(recons_path, intersection_path, union_path, input_files, info_folder
 # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ #
 
 def rescale_from_pool_map(input_file, additional_args):
-    recons_df     = additional_args[0]
+    recons_df_list= additional_args[0]
     mean          = additional_args[1]
     sd            = additional_args[2]
     amplitude_col = additional_args[3]
@@ -260,28 +284,44 @@ def rescale_from_pool_map(input_file, additional_args):
     full_recon    = additional_args[5]
     full_recon_output_folder = additional_args[6]
     union_index   = additional_args[7]
-    
+
+    recons_df = recons_df_list[0] 
     col = recons_df[os.path.basename(input_file)]
+        
     ds = rs.read_mtz(input_file)
     idx = ds.index
 
     recons_col = col[idx] * sd[idx] + mean[idx]
     recons_col = rs.DataSeries(recons_col, dtype="SFAmplitude")
-
+    
     ds['recons'] = recons_col
-    ds['diff'] = ds[amplitude_col] - ds['recons']
+    ds['diff']   = ds[amplitude_col] - ds['recons']
+
+    # if a second list element is present, it is the stdev across VAE sampling
+    if len(recons_df_list)>1:
+        include_std=True
+        recons_df_std=recons_df_list[1] 
+        std_col = recons_df_std[os.path.basename(input_file)]
+        recons_std_col = std_col[idx] * sd[idx]
+        recons_std_col = rs.DataSeries(recons_std_col, dtype="Stddev")
+        ds['SIG_recons'] = recons_std_col
     
     ds.write_mtz(os.path.join(output_folder, os.path.basename(input_file)))
 
     if full_recon:
         base_name=os.path.basename(input_file)[:-4]+"_full_recon.mtz"
         recons_col_full = col * sd + mean
-
+        
         tmp=pd.DataFrame(index=union_index)
         tmp["recons"]=recons_col_full
+        tmp["recons"]=tmp["recons"].astype("SFAmplitude")
+
+        if include_std:
+            recons_col_full_std = std_col * sd
+            tmp["SIG_recons"]=recons_col_full_std
+            tmp["SIG_recons"]=tmp["SIG_recons"].astype("Stddev")
         
         full_ds = rs.DataSet(tmp, spacegroup=ds.spacegroup, cell=ds.cell, merged=ds.merged)
-        full_ds["recons"]=full_ds["recons"].astype("SFAmplitude")
         full_ds.infer_mtz_dtypes()
         full_ds.write_mtz(os.path.join(full_recon_output_folder, base_name))
 
@@ -323,12 +363,24 @@ def rescale_pool(recons_path, intersection_path, union_path, input_files, info_f
     recons = np.load(recons_path)
     intersection = pd.read_pickle(intersection_path)
     union = pd.read_pickle(union_path)
+
+    if recons.shape[0]==2: # mean and std in array
+        recons_df_mean = pd.DataFrame(np.squeeze(recons[0,:,:]).T, \
+                                      index=union.index, \
+                                      columns=intersection.columns)
+        recons_df_std  = pd.DataFrame(np.squeeze(recons[1,:,:]).T, \
+                                      index=union.index, \
+                                      columns=intersection.columns)
+        recons_df_list = [recons_df_mean, recons_df_std]
+    else:
+        recons_df = pd.DataFrame(recons.T, index=union.index, columns=intersection.columns)
+        recons_df_list = [recons_df]
     
-    recons_df = pd.DataFrame(recons.T, index=union.index, columns=intersection.columns)
     mean = pd.read_pickle(os.path.join(info_folder, 'union_mean.pkl'))
     sd = pd.read_pickle(os.path.join(info_folder, 'union_sd.pkl'))
 
-    additional_args=[recons_df, mean, sd, amplitude_col, output_folder, return_full_recon, full_recon_output_folder, union.index]
+    additional_args=[recons_df_list, mean, sd, amplitude_col, output_folder, \
+                     return_full_recon, full_recon_output_folder, union.index]
     input_args = zip(input_files, repeat(additional_args))
     if ncpu is not None:
         with Pool(ncpu) as pool:

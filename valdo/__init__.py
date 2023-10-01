@@ -8,3 +8,4 @@ from . import reindex
 from . import blobs
 from . import tag
 from . import helper
+from . import knn_tools
