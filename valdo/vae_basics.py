@@ -116,14 +116,17 @@ class DenseNet(nn.Module):
     def forward(self, x):
         return self._layers(x)
 
-def sampling(z_mean, z_log_var):
+def sampling(z_mean, z_log_var, repeats=None):
     """
     Reparameterization Trick
     Uses (z_mean, z_log_var) to sample z, with normal distribution.
     """
     batch = z_mean.size(0)
     dim = z_mean.size(1)
-    epsilon = torch.randn(batch, dim, device=z_mean.device)
+    if repeats is None:
+        epsilon = torch.randn(batch, dim, device=z_mean.device)
+    else:
+        epsilon = torch.randn(repeats, batch, dim, device=z_mean.device)
     return z_mean + torch.exp(0.5 * z_log_var) * epsilon
 
 
