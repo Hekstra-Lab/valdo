@@ -92,11 +92,16 @@ def blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff=4
     
     sample = rs.read_mtz(file)[[diff_col, phase_col]].dropna()
     sample_id = os.path.splitext(os.path.basename(file))[0]
+    # print(sample_id)
+    # print("1: " + glob.glob(os.path.join(model_folder, f"*{sample_id}*.pdb"))[0])
+    # print("2: " + os.path.join(model_folder, f"{sample_id}.pdb"))
     error_file = os.path.join(output_folder, 'error_log.txt')  # Path to the error log file
     blob_stats=[]
     
     try:
-        structure = gemmi.read_pdb(f'{model_folder}/{sample_id}.pdb')
+        structure = gemmi.read_pdb(os.path.join(model_folder, f"{sample_id}.pdb"))
+    except: 
+        structure = gemmi.read_pdb(glob.glob(os.path.join(model_folder, f"*{sample_id}*.pdb"))[0])
         
     except Exception as e:        
         error_message = f'Could not identify the model file for sample {sample_id}: {str(e)}.\n'
@@ -168,9 +173,10 @@ def generate_blobs_pool(input_files, model_folder, diff_col, phase_col, output_f
     if not os.path.exists(output_folder):
         print(output_folder + " should exist already!")
 
-    additional_args=[model_folder, diff_col, phase_col, output_folder, cutoff, radius_in_A, negate, sample_rate]    
+    additional_args=[model_folder, diff_col, phase_col, output_folder, cutoff, radius_in_A, negate, sample_rate]
+    input_args = zip(input_files, repeat(additional_args))
     with Pool(ncpu) as pool:
-        blob_stats = pool.starmap(blob_helper_wrapper, zip(input_files, repeat(additional_args)))
+        blob_stats = pool.starmap(blob_helper_wrapper, tqdm(input_args, total=len(input_files)))
 
     blob_stats_df = pd.concat(blob_stats,ignore_index=True)
     blob_stats_df.to_pickle(os.path.join(output_folder, prefix + 'blob_stats.pkl'))

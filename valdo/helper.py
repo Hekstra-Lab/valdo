@@ -145,7 +145,8 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
     for file in tqdm(file_list):
         current = rs.read_mtz(file)
         try:
-            phases_df = rs.read_mtz(apo_mtzs_path + os.path.basename(file))    
+            print("Reading in " +   glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])
+            phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])   
         except:
             no_phases_files.append(file)
             continue
@@ -159,10 +160,11 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
 
 def add_weights_single_file(file, additional_args):
     sigF_col =additional_args[0]
-    diff_col =additional_args[1]
-    sigdF_pct=additional_args[2]
-    absdF_pct=additional_args[3]
-    redo     =additional_args[4]
+    sigF_col_recons=additional_args[1]
+    diff_col =additional_args[2]
+    sigdF_pct=additional_args[3]
+    absdF_pct=additional_args[4]
+    redo     =additional_args[5]
 
     success=0
     try:
@@ -175,6 +177,9 @@ def add_weights_single_file(file, additional_args):
     else:
         # print("Calculating weights for " + file)
         sigdF=current[sigF_col].to_numpy()
+        # include reconstruction errors iff we have them.
+        if sigF_col_recons in current:
+            sigdF=np.sqrt(sigdF**2 + current[sigF_col_recons].to_numpy()**2)
         absdF=np.abs(current[diff_col].to_numpy())
         
         w = 1+(sigdF/np.percentile(sigdF,sigdF_pct))**2+(absdF/np.percentile(absdF,absdF_pct))**2
@@ -188,20 +193,30 @@ def add_weights_single_file(file, additional_args):
 
     return success
 
-def add_weights(file_list, sigF_col="SIGF-obs", diff_col="diff",sigdF_pct=99, absdF_pct=99.9, redo=True, ncpu=1):
+def add_weights(file_list, sigF_col="SIGF-obs", sigF_col_recons="SIG_recons", diff_col="diff",sigdF_pct=90.0, absdF_pct=99.99, redo=True, ncpu=1):
     """
     Add difference map coefficient weights to the corresponding files in file_list in vae_reconstructed_with_phases_path. 
         Parameters:
+        -----------
             file_list (list of str) : list of input files (complete path!)
-
+            sigF_col (str) : name of column containing error estimates for measured amplitudes
+            sigF_col_recons (str) : name of column containing error estimates for reconstructed ampls (default: "SIG_recons, as produced by the VAE reconstruction method)
+            diff_col (str): name of column for output Fobs-Frecon (default: "diff")
+            sigdF_pct (float): value of sig(deltaF) at which weights substantially diminish
+            absdF_pct (float): value of abs(deltaF) at which weights substantially diminish
+            redo (bool): whether to override existing weights (default: True)
+            ncpu (int): Number of CPUs to use for multiprocessing (default: 1)
+            
         Returns:
+        --------
             list of input files for which no matching file with phases could be found.
     """
     
-    additional_args=[sigF_col, diff_col, sigdF_pct, absdF_pct, redo]
+    additional_args=[sigF_col, sigF_col_recons, diff_col, sigdF_pct, absdF_pct, redo]
     if ncpu>1:
+        input_args = zip(file_list,repeat(additional_args))
         with Pool(ncpu) as pool:
-            result = pool.starmap(add_weights_single_file, zip(file_list,repeat(additional_args)))
+            result = pool.starmap(add_weights_single_file, tqdm(input_args, total=len(file_list)))
         
     else:
         result=[]
@@ -232,15 +247,18 @@ def add_phases_from_pool_map(file, additional_args):
     current = rs.read_mtz(file)
     success=False
     try:
-        phases_df = rs.read_mtz(apo_mtzs_path + os.path.basename(file)) 
-        # print(phases_df.columns)
+        try:
+            phases_df = rs.read_mtz(os.path.join(apo_mtzs_path, os.path.basename(file)))
+        except:
+            phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])
+
         current[phase_2FOFC_col_out] = phases_df[phase_2FOFC_col_in]
         current[phase_FOFC_col_out]  = phases_df[phase_FOFC_col_in]
         current.write_mtz(vae_reconstructed_with_phases_path + os.path.basename(file))
         success=True
     except Exception as e:
-        # print(e,flush=True)
-        pass
+        print(e,flush=True)
+        # pass
         
     return [file, success]
 
@@ -267,15 +285,14 @@ def add_phases_pool(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path
     """
 
     additional_args=[apo_mtzs_path, vae_reconstructed_with_phases_path, phase_2FOFC_col_out, phase_FOFC_col_out,phase_2FOFC_col_in, phase_FOFC_col_in]
-    
+    input_args = zip(file_list, repeat(additional_args))
     with Pool(ncpu) as pool:
-        metrics = pool.starmap(add_phases_from_pool_map, zip(file_list, repeat(additional_args)))
+        metrics = pool.starmap(add_phases_from_pool_map, tqdm(input_args, total=len(file_list)))
             
         metrics_df = pd.DataFrame(metrics)
         metrics_df.columns=['file', 'success']
-        metrics_df.to_pickle(vae_reconstructed_with_phases_path + prefix + 'add_phases_report.pkl')
     
-    return metrics_df
+    return metrics_df[~metrics_df['success']]['file'].tolist()
 
     
         
