@@ -1,0 +1,54 @@
+refinement {
+# strip the unit cell and spacegroup info from the input PDB file to make sure we use the MTZ sg/uc
+# note that phenix.refine also supports a change of basis (change_of_basis)
+input {
+  xray_data.r_free_flags.file_name="/n/holyscratch01/hekstra_lab/dhekstra/valdo-tests/refine/refine_256_Rfree_flags_ref.mtz"
+  symmetry_safety_check=warning
+}
+output {
+    write_eff_file = True
+    write_geo_file = False
+    write_final_geo_file = False
+    write_def_file = False
+    write_model_cif_file = False
+    write_reflection_cif_file = False
+    export_final_f_model = False
+    write_maps = False
+    write_map_coefficients = True
+    write_map_coefficients_only = False
+    pickle_fmodel = False
+    n_resolution_bins = None
+    quiet = False
+  }
+  electron_density_maps {
+    map_coefficients {
+      map_type = Fc
+      mtz_label_amplitudes = FC
+      mtz_label_phases = PHFC
+    }
+    map_coefficients {
+      map_type = 2mFo-DFc
+      mtz_label_amplitudes = 2FOFCWT
+      mtz_label_phases = PH2FOFCWT
+    }
+    map_coefficients {
+      map_type = mFo-DFc
+      mtz_label_amplitudes = FOFCWT
+      mtz_label_phases = PHFOFCWT
+    }
+  }
+  refine {
+# added individual_sites, individual_adp
+    strategy = *individual_sites individual_sites_real_space *rigid_body \
+               *individual_adp group_adp *tls *occupancies group_anomalous
+ main {
+#    show_process_info = True
+    ordered_solvent = False
+    nqh_flips = True
+    number_of_macro_cycles = 4
+    nproc = 1
+  }
+#  modify_start_model {
+#    change_of_basis = None
+#  }
+}
