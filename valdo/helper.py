@@ -145,6 +145,7 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
     for file in tqdm(file_list):
         current = rs.read_mtz(file)
         try:
+            print("Reading in " +   glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])
             phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])   
         except:
             no_phases_files.append(file)
@@ -246,15 +247,18 @@ def add_phases_from_pool_map(file, additional_args):
     current = rs.read_mtz(file)
     success=False
     try:
-        phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])
-        # print(phases_df.columns)
+        try:
+            phases_df = rs.read_mtz(os.path.join(apo_mtzs_path, os.path.basename(file)))
+        except:
+            phases_df = rs.read_mtz(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0])
+
         current[phase_2FOFC_col_out] = phases_df[phase_2FOFC_col_in]
         current[phase_FOFC_col_out]  = phases_df[phase_FOFC_col_in]
         current.write_mtz(vae_reconstructed_with_phases_path + os.path.basename(file))
         success=True
     except Exception as e:
-        # print(e,flush=True)
-        pass
+        print(e,flush=True)
+        # pass
         
     return [file, success]
 

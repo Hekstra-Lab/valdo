@@ -49,7 +49,7 @@ def main():
                             pdbfile, 
                             mtzfile, 
                             f"output.prefix={output_prefix})",
-                            f"{args.eff}"])
+                            f"{args.eff}", "--overwrite"])
     else:
         print("Only one PDB file is provided, will be used for all refinement initialization!", flush=True)
         pdbfile = pdb_files[0]
@@ -60,4 +60,4 @@ def main():
                             pdbfile, 
                             mtzfile, 
                             f"output.prefix={output_prefix}",
-                            f"{args.eff}"])
+                            f"{args.eff}", "--overwrite"])

@@ -92,10 +92,15 @@ def blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff=4
     
     sample = rs.read_mtz(file)[[diff_col, phase_col]].dropna()
     sample_id = os.path.splitext(os.path.basename(file))[0]
+    # print(sample_id)
+    # print("1: " + glob.glob(os.path.join(model_folder, f"*{sample_id}*.pdb"))[0])
+    # print("2: " + os.path.join(model_folder, f"{sample_id}.pdb"))
     error_file = os.path.join(output_folder, 'error_log.txt')  # Path to the error log file
     blob_stats=[]
     
     try:
+        structure = gemmi.read_pdb(os.path.join(model_folder, f"{sample_id}.pdb"))
+    except: 
         structure = gemmi.read_pdb(glob.glob(os.path.join(model_folder, f"*{sample_id}*.pdb"))[0])
         
     except Exception as e:        

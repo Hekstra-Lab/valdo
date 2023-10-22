@@ -27,6 +27,7 @@ def find_intersection(input_files, output_path, amplitude_col='F-obs-scaled'):
         except:
             continue
     result = pd.concat(df_list, axis=1, join='inner')
+    print(f"The intersection has shape {result.shape}. Pickling begins now.")
     result.to_pickle(output_path)
     
 def find_union(input_files, output_path, sigF_path, amplitude_col='F-obs-scaled', error_col='SIGF-obs-scaled',include_errors=True):
@@ -75,6 +76,7 @@ def find_union(input_files, output_path, sigF_path, amplitude_col='F-obs-scaled'
         result.rename(columns=stripped_keys)
         print(result.info())
         result.to_pickle(output_path)
+    print(f"The union has shape {result.shape}. Pickling complete.")
     
 
 # ABOUT EQUALLY FAST:
@@ -116,9 +118,12 @@ def standardize(input_, output_folder):
         tuple: A tuple containing the standardized data (numpy.ndarray), mean (float), and standard deviation (float).
     """
 
-    mean = np.mean(input_)
-    sd = np.std(input_)
+    # mean = np.mean(input_,axis=0)
+    # sd = np.std(input_,axis=0)
+    mean = input_.mean(axis=0)
+    sd = input_.std(axis=0,ddof=0)
     standard = (input_ - mean)/sd
+    
     
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -126,6 +131,10 @@ def standardize(input_, output_folder):
     standard.to_pickle(os.path.join(output_folder, 'union_standardized.pkl'))
     mean.to_pickle(os.path.join(output_folder, 'union_mean.pkl'))
     sd.to_pickle(os.path.join(output_folder, 'union_sd.pkl'))
+    # except:
+    #     print('saving as numpy array (npy) instead')
+    #     np.save(os.path.join(output_folder, 'union_mean.pkl'), mean)
+    #     np.save(os.path.join(output_folder, 'union_sd.pkl'),   sd)
     
     return standard, mean, sd
 
@@ -229,10 +238,10 @@ def rescale(recons_path, intersection_path, union_path, input_files, info_folder
     else:
         recons_df = pd.DataFrame(recons.T, index=union.index, columns=intersection.columns)
         include_std=False
-    
+
     mean = pd.read_pickle(os.path.join(info_folder, 'union_mean.pkl'))
     sd   = pd.read_pickle(os.path.join(info_folder, 'union_sd.pkl'))
-
+        
     for file in tqdm(input_files):
         
         col = recons_df[os.path.basename(file)]
