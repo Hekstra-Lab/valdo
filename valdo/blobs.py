@@ -99,10 +99,10 @@ def blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff=4
     blob_stats=[]
     
     try:
-        structure = gemmi.read_pdb(os.path.join(model_folder, f"{sample_id}.pdb"))
-    except: 
-        structure = gemmi.read_pdb(glob.glob(os.path.join(model_folder, f"*{sample_id}*.pdb"))[0])
-        
+        try:
+            structure = gemmi.read_pdb(os.path.join(model_folder, f"{sample_id}.pdb"))
+        except: 
+            structure = gemmi.read_pdb(glob.glob(os.path.join(model_folder, f"*{sample_id}*.pdb"))[0])
     except Exception as e:        
         error_message = f'Could not identify the model file for sample {sample_id}: {str(e)}.\n'
         print(error_message)
