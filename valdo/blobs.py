@@ -82,7 +82,7 @@ def generate_blobs(input_files, model_folder, diff_col, phase_col, output_folder
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)   
 
-    blob_stats_df = pd.concat(blob_stats)
+    blob_stats_df = pd.concat(blob_stats).reset_index(drop=True)
     blob_stats_df.to_pickle(os.path.join(output_folder, prefix + 'blob_stats.pkl'))
     print("Done generating blobs and wrote " + os.path.join(output_folder, prefix + 'blob_stats.pkl'))
 
