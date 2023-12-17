@@ -172,6 +172,7 @@ def add_weights_single_file(file, additional_args):
     sigdF_pct=additional_args[3]
     absdF_pct=additional_args[4]
     redo     =additional_args[5]
+    cutoff   =additional_args[6]
 
     success=0
     try:
@@ -192,6 +193,8 @@ def add_weights_single_file(file, additional_args):
         w = 1+(sigdF/np.percentile(sigdF,sigdF_pct))**2+(absdF/np.percentile(absdF,absdF_pct))**2
         w=1/w
         current["WT"] = w
+        current.compute_dHKL(inplace=True)
+        current.loc[current.dHKL>cutoff, "WT"]=0
         current["WT"]=current["WT"].astype("W")
         current["WDF"]=current["WT"]*current[diff_col]
         current["WDF"]=current["WDF"].astype("F")
@@ -200,7 +203,7 @@ def add_weights_single_file(file, additional_args):
 
     return success
 
-def add_weights(file_list, sigF_col="SIGF-obs", sigF_col_recons="SIG_recons", diff_col="diff",sigdF_pct=90.0, absdF_pct=99.99, redo=True, ncpu=1):
+def add_weights(file_list, sigF_col="SIGF-obs", sigF_col_recons="SIG_recons", diff_col="diff",sigdF_pct=90.0, absdF_pct=99.99, redo=True, low_res_cutoff=999., ncpu=1):
     """
     Add difference map coefficient weights to the corresponding files in file_list in vae_reconstructed_with_phases_path. 
         Parameters:
@@ -212,6 +215,7 @@ def add_weights(file_list, sigF_col="SIGF-obs", sigF_col_recons="SIG_recons", di
             sigdF_pct (float): value of sig(deltaF) at which weights substantially diminish
             absdF_pct (float): value of abs(deltaF) at which weights substantially diminish
             redo (bool): whether to override existing weights (default: True)
+            low_res_cutoff (float) : at resolution lower (larger #) than this cutoff we set the weight to 0 (default: 999.0)
             ncpu (int): Number of CPUs to use for multiprocessing (default: 1)
             
         Returns:
@@ -219,7 +223,7 @@ def add_weights(file_list, sigF_col="SIGF-obs", sigF_col_recons="SIG_recons", di
             list of input files for which no matching file with phases could be found.
     """
     
-    additional_args=[sigF_col, sigF_col_recons, diff_col, sigdF_pct, absdF_pct, redo]
+    additional_args=[sigF_col, sigF_col_recons, diff_col, sigdF_pct, absdF_pct, redo, low_res_cutoff]
     if ncpu>1:
         input_args = zip(file_list,repeat(additional_args))
         with Pool(ncpu) as pool:
@@ -347,5 +351,48 @@ def add_phases_pool(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path
     
     return metrics_df[~metrics_df['success']]['file'].tolist()
 
+
+def french_wilson_from_pool_map(file, additional_args):
+    intensity_key=additional_args[0]
+    sigma_key = additional_args[1]
+    output_columns = additional_args[2]
+    clip_neg_Iobs = additional_args[3]
+    ds=rs.read_mtz(file)
     
-        
+    ds_out=rs.algorithms.scale_merged_intensities(\
+        ds, \
+        intensity_key=intensity_key, \
+        sigma_key=sigma_key, \
+        output_columns=output_columns, \
+        dropna=True, \
+        inplace=False, \
+        mean_intensity_method='anisotropic', \
+        bw=2.0,
+        clip_neg_Iobs=clip_neg_Iobs,
+    )
+    ds_out.write_mtz(file)
+    return 1
+
+
+def apply_french_wilson(file_list, intensity_key, sigma_key, output_columns=["FP","SIGFP"], clip_neg_Iobs=True, ncpu=None):
+    """
+    Apply French-Wilson scaling to observed intensities.
+        Parameters:
+            file_list (list of str) : list of input files (complete path!)
+            intensity_key (str): name of intensity column to apply FW scaling to
+            sigma_key (str): name columnn with  error estimates for observed intensities
+            output_columns (list of two str): name of output columns for FP, SIGFP (default: ["FP", "SIGFP"]
+            clip_neg_Iobs (bool) : whether to clip Iobs to pos values when calculating Sigma (local avg) (default: True)
+            ncpu (int) : Number of CPUs available
+
+        Returns:
+            list of mtz files for which FW succeeded.
+    """
+
+    additional_args=[intensity_key, sigma_key, output_columns, clip_neg_Iobs]
+    input_args = zip(file_list, repeat(additional_args))
+    with Pool(ncpu) as pool:
+        success = pool.starmap(french_wilson_from_pool_map, tqdm(input_args, total=len(file_list)))
+            
+   
+    return success
