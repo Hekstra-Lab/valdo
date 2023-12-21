@@ -302,6 +302,8 @@ def mark_duplicates(blobs_df, distance_cutoff=1):
             # all_possible_cart_lists = group['all_possible_cart'].tolist() # <<
             all_possible_cart_lists = group['all_possible_cart'].values.tolist() # works for ncpu=1 output
             for i in range(1, len(all_possible_cart_lists)):
+                # we only check the distance between peak i and peak i-1 since duplicate blobs should have similar scores
+                # since blobs are sorted by score, duplicate blobs should be adjacent in the dataframe
                 if check_euclidean_distance(all_possible_cart_lists[i-1], all_possible_cart_lists[i], distance_cutoff):
                     blobs_df.at[group.index[i], 'duplicate'] = 1
     
