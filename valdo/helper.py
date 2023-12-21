@@ -379,7 +379,6 @@ def french_wilson_from_pool_map(file, additional_args):
         minimum_sigma=minimum_sigma,
     )
     ds_out.write_mtz(file)
-    print('.')
     return 1
 
 
