@@ -10,6 +10,7 @@ import torch
 import pandas as pd
 import numpy as np
 import reciprocalspaceship as rs
+# from multiprocessing import get_context
 
 def try_gpu(i=0):
     if torch.cuda.device_count() >= i + 1:
@@ -203,13 +204,13 @@ def add_weights_single_file(file, additional_args):
 
     return success
 
-def add_weights(file_list, sigF_col="SIGF-obs", sigF_col_recons="SIG_recons", diff_col="diff",sigdF_pct=90.0, absdF_pct=99.99, redo=True, low_res_cutoff=999., ncpu=1):
+def add_weights(file_list, sigF_col="SIGF-obs-scaled", sigF_col_recons="SIG_recons", diff_col="diff",sigdF_pct=90.0, absdF_pct=99.99, redo=True, low_res_cutoff=999., ncpu=1):
     """
     Add difference map coefficient weights to the corresponding files in file_list in vae_reconstructed_with_phases_path. 
         Parameters:
         -----------
             file_list (list of str) : list of input files (complete path!)
-            sigF_col (str) : name of column containing error estimates for measured amplitudes
+            sigF_col (str) : name of column containing error estimates for measured amplitudes *scaled to the reference mtz*
             sigF_col_recons (str) : name of column containing error estimates for reconstructed ampls (default: "SIG_recons, as produced by the VAE reconstruction method)
             diff_col (str): name of column for output Fobs-Frecon (default: "diff")
             sigdF_pct (float): value of sig(deltaF) at which weights substantially diminish
@@ -353,12 +354,19 @@ def add_phases_pool(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path
 
 
 def french_wilson_from_pool_map(file, additional_args):
-    intensity_key=additional_args[0]
-    sigma_key = additional_args[1]
+    intensity_key  = additional_args[0]
+    sigma_key      = additional_args[1]
     output_columns = additional_args[2]
-    clip_neg_Iobs = additional_args[3]
+    isotropic      = additional_args[3]
+    minimum_sigma  = additional_args[4]
+    bw             = additional_args[5]
     ds=rs.read_mtz(file)
-    
+
+    if isotropic:
+        mean_intensity_method="isotropic"
+    else:
+        mean_intensity_method="anisotropic"
+        
     ds_out=rs.algorithms.scale_merged_intensities(\
         ds, \
         intensity_key=intensity_key, \
@@ -366,33 +374,134 @@ def french_wilson_from_pool_map(file, additional_args):
         output_columns=output_columns, \
         dropna=True, \
         inplace=False, \
-        mean_intensity_method='anisotropic', \
-        bw=2.0,
-        clip_neg_Iobs=clip_neg_Iobs,
+        mean_intensity_method=mean_intensity_method, \
+        bw=bw,
+        minimum_sigma=minimum_sigma,
     )
     ds_out.write_mtz(file)
+    print('.')
     return 1
 
 
-def apply_french_wilson(file_list, intensity_key, sigma_key, output_columns=["FP","SIGFP"], clip_neg_Iobs=True, ncpu=None):
+def apply_french_wilson(file_list, intensity_key, sigma_key, output_columns=["I-FW","SIGI-FW","FP","SIGFP"], isotropic=True, minimum_sigma=0.1, bw=2.0, ncpu=None):
     """
     Apply French-Wilson scaling to observed intensities.
         Parameters:
             file_list (list of str) : list of input files (complete path!)
             intensity_key (str): name of intensity column to apply FW scaling to
             sigma_key (str): name columnn with  error estimates for observed intensities
-            output_columns (list of two str): name of output columns for FP, SIGFP (default: ["FP", "SIGFP"]
-            clip_neg_Iobs (bool) : whether to clip Iobs to pos values when calculating Sigma (local avg) (default: True)
+            output_columns (list of four str): name of output columns for I-FW, SIGI-FW, FP, SIGFP (default: ["I-FW","SIGI-FW","FP", "SIGFP"]
+            isotropic (bool) : Whether to use isotropic (True, default) or anisotropic estimation of Sigma
+            minimum_sigma (float) : minimum value of Sigma when using a local averaging to calculate it (default: 0.1)
+            bw (float): bandwidth of the exponential weights used to locally calculate Sigma.
             ncpu (int) : Number of CPUs available
 
         Returns:
             list of mtz files for which FW succeeded.
     """
 
-    additional_args=[intensity_key, sigma_key, output_columns, clip_neg_Iobs]
+    additional_args=[intensity_key, sigma_key, output_columns, isotropic, minimum_sigma, bw]
     input_args = zip(file_list, repeat(additional_args))
+
+    # with get_context("spawn").Pool(ncpu) as pool:
     with Pool(ncpu) as pool:
-        success = pool.starmap(french_wilson_from_pool_map, tqdm(input_args, total=len(file_list)))
+        success = pool.starmap(french_wilson_from_pool_map, input_args)
             
    
     return success
+
+def extrapolate_single_file(file, additional_args):
+    # eps is the minimal VAE reconstruction error if none is available (def: 1e-6)
+    eps       = 1.0e-6
+    F_col     = additional_args[0]
+    sigF_col  = additional_args[1]
+    recons_col= additional_args[2]
+    sig_recons= additional_args[3]
+    diff_col  = additional_args[4]
+    wt_col    = additional_args[5]
+    weighted  = additional_args[6]
+    ext_fact  = additional_args[7]
+    redo      = additional_args[8]
+
+    success=0
+    try:
+        current = rs.read_mtz(file)
+    except Exception as e:
+        print(e)
+    
+    col_names=[]
+    for n in ext_fact:
+        if weighted:
+            col_names.append("WESF_"+str(n))
+        else:
+            col_names.append("ESF_"+str(n))
+    
+    if not redo:
+        all_cols_exist=True
+        for name in col_names:
+            if name not in current.columns:
+                all_cols_exist=False
+    else:
+        all_cols_exist=False
+
+    if all_cols_exist and not redo:
+        print("Not doing extrapolation.")
+    else:
+        # include reconstruction errors iff we have them.
+        if sig_recons not in current:
+            current[sig_recons]=eps
+            current[sig_recons]=current[sig_recons].astype("Stddev")
+        dF=current[diff_col].to_numpy()
+        
+        if weighted:
+            dF   =dF   *current["WDF"].to_numpy()
+        for i in range(len(ext_fact)):
+            N=ext_fact[i]
+            current[col_names[i]]=current[recons_col] + N*dF
+            current[col_names[i]]=current[col_names[i]].astype("SFAmplitude")
+            current["SIG"+col_names[i]]=np.sqrt(N**2     * current[sigF_col  ].to_numpy()**2 + \
+                                                (N-1)**2 * current[sig_recons].to_numpy()**2)
+            current["SIG"+col_names[i]]=current["SIG"+col_names[i]].astype("Stddev")
+        
+        current.write_mtz(file)
+        success=1
+
+    return success
+
+def extrapolate(file_list, F_col="F-obs-scaled", sigF_col="SIGF-obs-scaled", recons_col="recons", sigF_recons_col="SIG_recons", diff_col="diff", wt_col="WT",\
+                redo=True, weighted=False, extrapolate_factors=[2,4,8], ncpu=1):
+    """
+    Calculate extrapolated differences (weighted or unweighted and add the corresponding files in file_list. 
+    Note that this is relative to Frecon, but that it is easy to interconvert: N*(Fo-Fr)+Fo = (N+1)*(Fo-Fr)+Fr
+        
+        Parameters:
+        -----------
+            file_list (list of str) : list of input files (complete path!)
+            F_col (str) : name of column containing observed amplitudes (*scaled to reference mtz*)
+            sigF_col (str) : name of column containing error estimates for *scaled* measured amplitudes
+            recons_col (str) : name of column containing VAE-reconstructed amplitudes (after rescaling to match the ref mtz)
+            sigF_recons_col (str) : name of column containing error estimates for reconstructed ampls (default: "SIG_recons")
+            diff_col (str): name of column for output Fobs-Frecon (default: "diff")
+            wt_col (str) : name of column containing weights
+            redo (bool): whether to override existing weights (default: True)
+            weighted (bool) : whether to apply weights to the deltaF (default: False)
+            extrapolate_factors (list of int) : list of extrapolation factors (default: [2, 4, 8]
+            ncpu (int): Number of CPUs to use for multiprocessing (default: 1)
+            
+        Returns:
+        --------
+            TBD
+    """
+    
+    additional_args=[F_col, sigF_col, recons_col, sigF_recons_col, diff_col, wt_col, weighted, extrapolate_factors, redo]
+    if ncpu>1:
+        input_args = zip(file_list,repeat(additional_args))
+        with Pool(ncpu) as pool:
+            result = pool.starmap(extrapolate_single_file, tqdm(input_args, total=len(file_list)))
+        
+    else:
+        result=[]
+        for filename in tqdm(file_list):
+            result.append(extrapolate_single_file(filename, additional_args))
+
+    return result
