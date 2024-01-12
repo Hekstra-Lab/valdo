@@ -3,6 +3,7 @@ import sys
 import glob
 import re
 import shutil
+import warnings
 from multiprocessing import Pool
 from itertools import repeat
 from tqdm import tqdm
@@ -10,7 +11,6 @@ import torch
 import pandas as pd
 import numpy as np
 import reciprocalspaceship as rs
-# from multiprocessing import get_context
 
 def try_gpu(i=0):
     if torch.cuda.device_count() >= i + 1:
@@ -174,6 +174,7 @@ def add_weights_single_file(file, additional_args):
     absdF_pct=additional_args[4]
     redo     =additional_args[5]
     cutoff   =additional_args[6]
+    wt_coefs =additional_args[7]
 
     success=0
     try:
@@ -191,7 +192,7 @@ def add_weights_single_file(file, additional_args):
             sigdF=np.sqrt(sigdF**2 + current[sigF_col_recons].to_numpy()**2)
         absdF=np.abs(current[diff_col].to_numpy())
         
-        w = 1+(sigdF/np.percentile(sigdF,sigdF_pct))**2+(absdF/np.percentile(absdF,absdF_pct))**2
+        w = 1+wt_coefs[0]*(sigdF/np.percentile(sigdF,sigdF_pct))**2 + wt_coefs[1]*(absdF/np.percentile(absdF,absdF_pct))**2
         w=1/w
         current["WT"] = w
         current.compute_dHKL(inplace=True)
@@ -204,7 +205,7 @@ def add_weights_single_file(file, additional_args):
 
     return success
 
-def add_weights(file_list, sigF_col="SIGF-obs-scaled", sigF_col_recons="SIG_recons", diff_col="diff",sigdF_pct=90.0, absdF_pct=99.99, redo=True, low_res_cutoff=999., ncpu=1):
+def add_weights(file_list, sigF_col="SIGF-obs-scaled", sigF_col_recons="SIG_recons", diff_col="diff",sigdF_pct=90.0, absdF_pct=99.99, wt_coefs=(1,1), redo=True, low_res_cutoff=999., ncpu=1):
     """
     Add difference map coefficient weights to the corresponding files in file_list in vae_reconstructed_with_phases_path. 
         Parameters:
@@ -215,6 +216,7 @@ def add_weights(file_list, sigF_col="SIGF-obs-scaled", sigF_col_recons="SIG_reco
             diff_col (str): name of column for output Fobs-Frecon (default: "diff")
             sigdF_pct (float): value of sig(deltaF) at which weights substantially diminish
             absdF_pct (float): value of abs(deltaF) at which weights substantially diminish
+            wt_coefs (2-tuple): additional weight coefficients for the sig_dF and abs_dF terms in the weight denominator, respectively (default: (1,1))
             redo (bool): whether to override existing weights (default: True)
             low_res_cutoff (float) : at resolution lower (larger #) than this cutoff we set the weight to 0 (default: 999.0)
             ncpu (int): Number of CPUs to use for multiprocessing (default: 1)
@@ -224,7 +226,7 @@ def add_weights(file_list, sigF_col="SIGF-obs-scaled", sigF_col_recons="SIG_reco
             list of input files for which no matching file with phases could be found.
     """
     
-    additional_args=[sigF_col, sigF_col_recons, diff_col, sigdF_pct, absdF_pct, redo, low_res_cutoff]
+    additional_args=[sigF_col, sigF_col_recons, diff_col, sigdF_pct, absdF_pct, redo, low_res_cutoff, wt_coefs]
     if ncpu>1:
         input_args = zip(file_list,repeat(additional_args))
         with Pool(ncpu) as pool:
@@ -243,22 +245,33 @@ def find_phase_file(file, apo_mtzs_path, parser=None):
     
     Parameters
     ----------
-    file (str): Name of the MTZ with reconstructed amplitudes
+    file (str or list of str): Name(s) of the MTZ with reconstructed amplitudes. If the parser returns multiple possibilities, 
+                               the first match to an MTZ with phases will be used. 
     apo_mtz_path (str): path to the directory with apo refinement results
     parser (function): user-provided function that will parse the input MTZ filename (default: None)
     
     Returns:
     --------
-    mtz (string): converted MTZ name
+    mtz (string or list of strings): converted MTZ name
     handler (int): index for which parsing routine was used; a value < 1 indicates failure.
     '''
     handler=0
     if parser != None:
-        mtz=os.path.join(apo_mtzs_path, parser(os.path.basename(file)))
-        if os.path.isfile(mtz):
-            handler=1
-        else:
-            handler=0
+        mtz_names=parser(os.path.basename(file)) # parser can return a list of possible values
+        if type(mtz_names) is str:
+             mtz_names=[mtz_names]
+        n=0
+        for m in mtz_names:            
+            if handler ==0:
+                if os.path.isfile(os.path.join(apo_mtzs_path, m)):
+                    mtz=os.path.join(apo_mtzs_path,m)
+                    handler=1
+                    n=n+1
+                else:
+                    handler=0
+        if n>1:
+            warnings.warn("Warning: detected multiple possible MTZ files containing phases.\n"+\
+                          "Make sure that the parser mapping input MTZs to MTZs containing phases is sufficiently specific.")
     if handler ==1:
         pass
     else:
@@ -404,12 +417,17 @@ def apply_french_wilson(file_list, intensity_key, sigma_key, output_columns=["I-
 
     # with get_context("spawn").Pool(ncpu) as pool:
     with Pool(ncpu) as pool:
-        success = pool.starmap(french_wilson_from_pool_map, input_args)
+        success = pool.starmap(french_wilson_from_pool_map, tqdm(input_args, total=len(file_list)))
             
    
     return success
 
 def extrapolate_single_file(file, additional_args):
+    '''
+    Note: the input column names 'WT' and 'WDF' are generated by add_weights_single_file() and considered fixed.
+          the output column names 'ESF_*' or 'WESF_*' are likewise considered fixed.
+          please file an issue or pull request to change this behavior.
+    '''
     # eps is the minimal VAE reconstruction error if none is available (def: 1e-6)
     eps       = 1.0e-6
     F_col     = additional_args[0]
@@ -440,6 +458,7 @@ def extrapolate_single_file(file, additional_args):
         for name in col_names:
             if name not in current.columns:
                 all_cols_exist=False
+                break
     else:
         all_cols_exist=False
 
@@ -450,10 +469,12 @@ def extrapolate_single_file(file, additional_args):
         if sig_recons not in current:
             current[sig_recons]=eps
             current[sig_recons]=current[sig_recons].astype("Stddev")
-        dF=current[diff_col].to_numpy()
         
         if weighted:
-            dF   =dF   *current["WDF"].to_numpy()
+            dF = current["WDF"].to_numpy()
+        else:
+            dF = current[diff_col].to_numpy()
+
         for i in range(len(ext_fact)):
             N=ext_fact[i]
             current[col_names[i]]=current[recons_col] + N*dF
