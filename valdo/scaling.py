@@ -9,6 +9,8 @@ from multiprocessing import Pool
 from itertools import repeat
 
 import time
+import torch
+from valdo.helper import try_gpu
 
 
 def get_aniso_args_np(uaniso, reciprocal_cell_paras, hkl):
@@ -25,6 +27,20 @@ def get_aniso_args_np(uaniso, reciprocal_cell_paras, hkl):
     )
     return args
 
+def aniso_scaling_torch(uaniso, reciprocal_cell_paras, hkl):
+    HKL_tensor = torch.tensor(hkl, device=uaniso.device)
+    U11, U22, U33, U12, U13, U23 = uaniso
+    h, k, l = HKL_tensor.T
+    ar, br, cr, cos_alphar, cos_betar, cos_gammar = reciprocal_cell_paras
+    args = (
+        U11 * h**2 * ar**2
+        + U22 * k**2 * br**2
+        + U33 * l**2 * cr**2
+        + 2 * (h * k * U12 * ar * br * cos_gammar 
+               + h * l * U13 * ar * cr * cos_betar 
+               + k * l * U23 * br * cr * cos_alphar)
+    )
+    return torch.exp(-2.0 * np.pi**2 * args)
 
 class Scaler(object):
     """
@@ -65,8 +81,6 @@ class Scaler(object):
         """
         Use analytical scaling method to get parameter k and uaniso, with purely numpy.
         Afonine, P. V., et al. Acta Crystallographica Section D: Biological Crystallography 69.4 (2013): 625-634.
-
-        TODO: opt_getku, use stepwise optimizer to further optimize the parameters, in pytorch
         """
         uaniso = np.array([0.]*6) # initialize 
         for _ in range(n_iter):
@@ -74,9 +88,31 @@ class Scaler(object):
             uaniso = self._get_uaniso(FA, FB, hkl, ln_k)
         return ln_k, uaniso
 
+    def opt_getku(self, FA, FB, hkl, ln_k, uaniso, device, n_steps=50, lr=0.01):
+        """
+        Use adam numerical optimization for better scaling
+        """
+        FA_tensor = torch.tensor(FA, requires_grad=True, dtype=torch.float32, device=device)
+        FB_tensor = torch.tensor(FB, requires_grad=True, dtype=torch.float32, device=device)
+        ln_k_init = torch.tensor(ln_k, requires_grad=True, dtype=torch.float32, device=device)
+        uaniso_init = torch.tensor(uaniso, requires_grad=True, dtype=torch.float32, device=device)
+        adam_opt = torch.optim.Adam([ln_k_init, uaniso_init], lr=lr)
+        for i in range(n_steps):
+            adam_opt.zero_grad()
+            FB_scaled = self.scaleit_torch(FB_tensor, ln_k_init, uaniso_init, hkl)
+            loss = torch.sum((FA_tensor - FB_scaled)**2)
+            loss.backward()
+            adam_opt.step()
+        return ln_k_init.detach().cpu().numpy(), uaniso_init.detach().cpu().numpy()
+
     def scaleit(self, FB, ln_k, uaniso, hkl):
         args = get_aniso_args_np(uaniso, self.reciprocal_cell_paras, hkl)
         FB_scaled = np.exp(ln_k) * np.exp(-args) * FB
+        return FB_scaled
+
+    def scaleit_torch(self, FB, ln_k, uaniso, hkl):
+        aniso_scaling = aniso_scaling_torch(uaniso, self.reciprocal_cell_paras, hkl)
+        FB_scaled = torch.exp(ln_k) * aniso_scaling * FB
         return FB_scaled
 
     def get_metric(self, FA, FB, uaniso, ln_k, hkl):
@@ -91,8 +127,23 @@ class Scaler(object):
         
         return [LS_i, corr_i, LS_f, corr_f]
     
-    def batch_scaling(self, mtz_path_list, outputmtz_path='./scaled_mtzs/', prefix=None, verbose=True, n_iter=5):
-        
+    def batch_scaling(self, mtz_path_list, 
+                      outputmtz_path='./scaled_mtzs/', 
+                      prefix="", 
+                      verbose=True, 
+                      n_iter=5, 
+                      when_opt=0.2,
+                      n_opt=50, 
+                      lr_opt=0.01, 
+                      opt_device=try_gpu()):
+        """
+        when_opt: "all" or "never" or float [0.0, 1.0]
+            argument to control when to use numerical optimization after analytical initialization
+            1. "all", use numerical optimization for every dataset
+            2. "never", don't use numerical optimization at all
+            3. float x between 0.0 and 1.0, apply numerical optimization when (LS_i - LS_f)/LS_i < x, e.g. analytical initialization
+            is not improving LS error large enough. 
+        """
         metrics = []
         for path in tqdm(mtz_path_list):
             start_time = time.time()
@@ -108,6 +159,26 @@ class Scaler(object):
 
             ln_k, uaniso = self.ana_getku(FA, FB, hkl, n_iter=n_iter)
             metric = self.get_metric(FA, FB, uaniso, ln_k, hkl)
+
+            # apply numerical optimization when condition satisfied
+            if type(when_opt) is str:
+                if when_opt == "all":
+                    ln_k, uaniso = self.opt_getku(FA, FB, hkl, ln_k, uaniso, opt_device, n_steps=n_opt, lr=lr_opt)
+                    metric = self.get_metric(FA, FB, uaniso, ln_k, hkl)
+                elif when_opt == "never":
+                    pass
+                else:
+                    raise ValueError("when_opt has to be 'all', 'never' or float between 0.0 and 1.0!")
+            elif type(when_opt) is float:
+                assert when_opt >= 0.0 and when_opt <= 1.0, "when_opt has to be 'all', 'never' or float between 0.0 and 1.0!"
+                ana_improvement = (metric[0] - metric[2] + 1e-3) / (metric[0] + 1e-3) # (LS_i - LS_f) / LS_i
+                if ana_improvement < when_opt:
+                    ln_k, uaniso = self.opt_getku(FA, FB, hkl, ln_k, uaniso, opt_device, n_steps=n_opt, lr=lr_opt)
+                    metric = self.get_metric(FA, FB, uaniso, ln_k, hkl)
+                else:
+                    pass
+            else:
+                raise ValueError("when_opt has to be 'all', 'never' or float between 0.0 and 1.0!")
 
             FB_complete = temp_mtz[self.columns[0]].to_numpy() 
             SIGFB_complete = temp_mtz[self.columns[1]].to_numpy() 
@@ -129,7 +200,9 @@ class Scaler(object):
                 
             metrics.append([concrete_filename, *metric])
         
-        pd.DataFrame(metrics).to_pickle(outputmtz_path + prefix + 'scaling_metrics.pkl')
+        metrics_df = pd.DataFrame(metrics)
+        metrics_df.columns=['file', 'start_LS', 'start_corr', 'end_LS', 'end_corr']
+        metrics_df.to_pickle(outputmtz_path + prefix + 'scaling_metrics.pkl')
         print("Scaling metrics have been saved at:", outputmtz_path + prefix + 'scaling_metrics.pkl', flush=True)
         return metrics
 
