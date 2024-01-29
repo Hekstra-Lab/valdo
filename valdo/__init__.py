@@ -1,3 +1,10 @@
+def getVersionNumber():
+    import pkg_resources
+    version = pkg_resources.require("rs-valdo")[0].version
+    return version
+
+__version__ = getVersionNumber()
+
 # Top level API
 from .scaling import Scaler, Scaler_pool
 from .vae_networks import VAE
