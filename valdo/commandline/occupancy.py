@@ -120,6 +120,7 @@ def main():
     current_mtz.write_mtz(extrapolated_mtz_path)
 
     ligand_IDD = []
+    ligand_IADD = []
     mag_name = "mFo-DFc"
     ph_name = "PHmFo-DFc"
     pdb_model = gemmi.read_pdb(args.pdbpath)[0]
@@ -142,11 +143,16 @@ def main():
         grid_obj = mtz2grid(temp_map_path, mag_name, ph_name)
         mask = get_map_around_selection(pdb_model, grid_obj, args.selection, roi_radius=args.roi_radius)
         ligand_IDD.append(np.mean(grid_obj.array[mask]))
+        ligand_IADD.append(np.mean(np.abs(grid_obj.array[mask])))
 
-    print("="*30 + " RESULTS " + "="*30, flush=True)
-    print(f"{'Extrapolated-Factor':<18}  {'FO-FC_Mean_over_Targets':>25}", flush=True)
-    for n, e in zip(ext_factors, ligand_IDD):
-        print(f"{n:^18.1f} {e:^25.3f}", flush=True)
+    opt_index = np.argmin(np.abs(ligand_IDD))
+    print("="*40 + " RESULTS " + "="*40, flush=True)
+    print(f"{'Extrapolated-Factor':^18}  {'Mean(FO-FC)_over_Targets':^40} {'Mean(|FO-FC|)_over_Targets':^28}", flush=True)
+    for i, (n, e, a) in enumerate(zip(ext_factors, ligand_IDD, ligand_IADD)):
+        if i == opt_index:
+            print("\033[1m"+f"{n:^18.1f} {e:^40.3f} {a:^28.3f}"+"\033[0;0m", flush=True)
+        else:
+            print(f"{n:^18.1f} {e:^40.3f} {a:^28.3f}", flush=True)
 
     opt_ext = ext_factors[np.argmin(np.abs(ligand_IDD))]
     print(f"Optimal  ExtFactor  : {opt_ext:.1f}", flush=True)
