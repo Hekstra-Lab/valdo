@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 
-from .vae_basics import DenseNet, sampling, elbo, elbo_w_err, elbo_student_t
+from .vae_basics import DenseNet, sampling, elbo, elbo_w_err, elbo_student_t, elbo_L1, elbo_L1_w_err
 from .helper import try_gpu
 
 from tqdm import tqdm
@@ -144,7 +144,7 @@ class VAE(nn.Module):
             pickle.dump(D, f, pickle.HIGHEST_PROTOCOL)
 
     
-    def train(self, x_train, y_train, e_train, optim, x_val=None, y_val=None, e_val=None, epochs=10, batch_size=256, w_kl=1.0,eps=0.05, include_errors=False,stdof=None, verbose=True):
+    def train(self, x_train, y_train, e_train, optim, x_val=None, y_val=None, e_val=None, epochs=10, batch_size=256, w_kl=1.0, eps=0.05, include_errors=False, L1_loss=False, stdof=None, verbose=True):
 
         if isinstance(batch_size, int):
             batch_size = [batch_size] * epochs
@@ -153,7 +153,7 @@ class VAE(nn.Module):
         
         if x_val is not None and y_val is not None:
             if include_errors:
-                dataset_val = TensorDataset(x_val, y_val,e_val)
+                dataset_val = TensorDataset(x_val, y_val, e_val)
             else:
                 dataset_val = TensorDataset(x_val, y_val)
             sampler = RandomSampler(dataset_val)
@@ -176,7 +176,10 @@ class VAE(nn.Module):
                     recons_x = self.decoder(z)
 
                     if stdof is None:
-                        loss_train, nll_train, kl_train = elbo_w_err(    z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl,eps=eps)                        
+                        if L1_loss:
+                            loss_train, nll_train, kl_train = elbo_L1_w_err(    z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl, eps=eps)              
+                        else:
+                            loss_train, nll_train, kl_train = elbo_w_err(    z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl,eps=eps)                        
                     else:
                         loss_train, nll_train, kl_train = elbo_student_t(z_mean, z_log_var, y_batch, recons_x, e_batch, w_kl,eps=eps, stdof=stdof)
                         
@@ -196,7 +199,10 @@ class VAE(nn.Module):
                         recons_x_test = self.decoder(z_test)
 
                         if stdof is None:
-                            loss_test, nll_test, kl_test = elbo_w_err(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,eps=eps, verbose=verbose)
+                            if L1_loss:
+                                loss_test, nll_test, kl_test = elbo_L1_w_err(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,eps=eps, verbose=verbose)
+                            else:
+                                loss_test, nll_test, kl_test = elbo_w_err(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,eps=eps, verbose=verbose)
                         else:
                             loss_test, nll_test, kl_test = elbo_student_t(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, e_batch_test, w_kl,eps=eps, stdof=stdof, verbose=verbose)
     
@@ -217,7 +223,10 @@ class VAE(nn.Module):
                     z_mean, z_log_var = encoding[:, :self.dim_z], encoding[:, self.dim_z:]
                     z = sampling(z_mean, z_log_var)
                     recons_x = self.decoder(z)
-                    loss_train, nll_train, kl_train = elbo(z_mean, z_log_var, y_batch, recons_x, w_kl)
+                    if L1_loss:
+                        loss_train, nll_train, kl_train = elbo_L1(z_mean, z_log_var, y_batch, recons_x, w_kl)
+                    else:
+                        loss_train, nll_train, kl_train = elbo(z_mean, z_log_var, y_batch, recons_x, w_kl)
                     loss_train.backward()
                     optim.step()
                     
@@ -231,7 +240,10 @@ class VAE(nn.Module):
                         z_test = sampling(z_mean_test, z_log_var_test)
                         recons_x_test = self.decoder(z_test)
 
-                        loss_test, nll_test, kl_test = elbo(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, w_kl)
+                        if L1_loss:
+                            loss_test, nll_test, kl_test = elbo_L1(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, w_kl)
+                        else:
+                            loss_test, nll_test, kl_test = elbo(z_mean_test, z_log_var_test, y_batch_test, recons_x_test, w_kl)
                         loss_np, loss_test_np = loss_train.item(), loss_test.item()
                         progress_bar.set_postfix(Train=loss_np, Test=loss_test_np, mem=torch.cuda.memory_allocated()/1e9)
                         self.loss_train.append([loss_np, nll_train.item(), kl_train.item(), loss_test_np, nll_test.item(), kl_test.item()])  

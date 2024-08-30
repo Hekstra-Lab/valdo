@@ -128,10 +128,26 @@ def sampling(z_mean, z_log_var):
 
 
 def elbo(mu_z, logvar_z, y_train, y_recons, w_kl):
+    """
+    ELBO using L2 loss
+    """
     nan_bool = torch.isnan(y_train)
     eff_dim = torch.sum(~nan_bool)
     least_squares = torch.sum((y_train[~nan_bool] - y_recons[~nan_bool])**2)
-    log_lkhd = (-0.5*eff_dim*np.log(2*np.pi) - 0.5*least_squares)/y_train.size(0) # we divide at the end because we do a mean across dim 1 for the sample dimension for kldiv
+    log_lkhd = (-0.5*eff_dim*np.log(2*np.pi) - 0.5*least_squares)/y_train.size(0) # we divide batch at the end because we do a mean across dim 1 for the sample dimension for kldiv
+    # KL divergence between two multivariate gaussians
+    kl_div = torch.mean(torch.sum(0.5*(torch.square(mu_z) + torch.exp(logvar_z) - mu_z.size(1) - logvar_z), dim=1))
+    total_loss = -log_lkhd + w_kl*kl_div
+    return total_loss, -log_lkhd, kl_div
+
+def elbo_L1(mu_z, logvar_z, y_train, y_recons, w_kl):
+    """
+    ELBO using L1 loss, following the noise2noise model
+    """
+    nan_bool = torch.isnan(y_train)
+    eff_dim = torch.sum(~nan_bool)
+    L1_loss = torch.sum(torch.abs((y_train[~nan_bool] - y_recons[~nan_bool])))
+    log_lkhd = (-0.5*eff_dim*np.log(2*np.pi) - L1_loss)/y_train.size(0) # we divide batch at the end because we do a mean across dim 1 for the sample dimension for kldiv
     # KL divergence between two multivariate gaussians
     kl_div = torch.mean(torch.sum(0.5*(torch.square(mu_z) + torch.exp(logvar_z) - mu_z.size(1) - logvar_z), dim=1))
     total_loss = -log_lkhd + w_kl*kl_div
@@ -156,6 +172,25 @@ def elbo_w_err(mu_z, logvar_z, y_train, y_recons, e_train, w_kl, eps=0.01, verbo
     kl_div = torch.mean(torch.sum(0.5*(torch.square(mu_z) + torch.exp(logvar_z) - mu_z.size(1) - logvar_z), dim=1))
     total_loss = -log_lkhd + w_kl*kl_div
     return total_loss, -log_lkhd, kl_div
+
+def elbo_L1_w_err(mu_z, logvar_z, y_train, y_recons, e_train, w_kl, eps=0.01, verbose=False):
+    """
+    Following the spirit of noise2noise model, try L1 loss in the reconstruction
+
+    So the likelihood function would be laplace distribution
+    """
+    nan_bool = torch.isnan(y_train)
+    eff_dim = torch.sum(~nan_bool)
+    L1_loss = torch.sum( torch.abs(y_train[~nan_bool] - y_recons[~nan_bool])/(eps+e_train[~nan_bool]))
+    if verbose:
+        if torch.sum(torch.isnan(y_recons)) > 0:
+            print("Warning: y_recons contains NaNs!")
+        
+    log_lkhd_L1 = (-0.5*eff_dim*np.log(2*np.pi) - torch.sum(torch.log((eps+e_train[~nan_bool]))) - L1_loss) / y_train.size(0)
+    # KL divergence between two multivariate gaussians
+    kl_div = torch.mean(torch.sum(0.5*(torch.square(mu_z) + torch.exp(logvar_z) - mu_z.size(1) - logvar_z), dim=1))
+    total_loss = -log_lkhd_L1 + w_kl*kl_div
+    return total_loss, -log_lkhd_L1, kl_div
 
 
 def elbo_student_t(mu_z, logvar_z, y_train, y_recons, e_train, w_kl, eps=0.01, stdof=64, verbose=False):

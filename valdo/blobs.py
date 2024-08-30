@@ -88,8 +88,7 @@ def generate_blobs(input_files, model_folder, diff_col, phase_col, output_folder
 
 
 def blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff=4, radius_in_A=5, negate=False, sample_rate=3):
-    sample = rs.read_mtz(file)
-    
+    # sample = rs.read_mtz(file)
     sample = rs.read_mtz(file)[[diff_col, phase_col]].dropna()
     sample_id = os.path.splitext(os.path.basename(file))[0]
     # print(sample_id)

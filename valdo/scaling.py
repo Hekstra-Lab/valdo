@@ -204,7 +204,7 @@ class Scaler(object):
         metrics_df.columns=['file', 'start_LS', 'start_corr', 'end_LS', 'end_corr']
         metrics_df.to_pickle(outputmtz_path + prefix + 'scaling_metrics.pkl')
         print("Scaling metrics have been saved at:", outputmtz_path + prefix + 'scaling_metrics.pkl', flush=True)
-        return metrics
+        return metrics_df
 
 # Multiprocessing variant #
 
