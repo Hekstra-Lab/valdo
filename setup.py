@@ -27,6 +27,7 @@ setup(name="rs-valdo",
     entry_points={
         "console_scripts": [
             "valdo.refine=valdo.commandline.refine:main",
+            "valdo.occupancy=valdo.commandline.occupancy:main"
         ]
     }
 )
