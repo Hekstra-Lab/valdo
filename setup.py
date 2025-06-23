@@ -20,6 +20,7 @@ setup(name="rs-valdo",
     python_requires=">=3.10",
     install_requires=[
         "torch>=1.13.0",
+        "gemmi<=0.6.7",
         "reciprocalspaceship>=0.9.18",
         "tqdm",
         "scikit-learn"
