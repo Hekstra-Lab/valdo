@@ -123,7 +123,9 @@ def standardize_input_mtzs(source_path, destination_path, mtz_file_pattern, ncpu
     return result
  
 
-def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, phase_2FOFC_col_out='PH2FOFCWT', phase_FOFC_col_out='PHFOFCWT',phase_2FOFC_col_in='PH2FOFCWT', phase_FOFC_col_in='PHFOFCWT',parser=None):
+def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, 
+               phase_2FOFC_col_out='PH2FOFCWT', phase_FOFC_col_out='PHFOFCWT',phase_2FOFC_col_in='PH2FOFCWT', phase_FOFC_col_in='PHFOFCWT',
+               parser=None, rfree_label_in=None):
     """
     Add phases from apo models refined against the data (or otherwise) to the corresponding files in file_list and 
     write the resulting MTZ to vae_reconstructed_with_phases_path. Filenames in the file_list and the "apo" MTZs should match (e.g., ####.mtz)
@@ -138,6 +140,7 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
             phase_FOFC_col_in (str)  : *input* MTZ column name for  Fo-Fc phases
             parser (function name) : parser that maps input MTZs to names of MTZ files containing apo phases (default: None)
                                      see pipeline notebook for examples.
+            rfree_label_in (None or str)  : *input* MTZ column name for Rfree flags
 
         Returns:
             list of input files for which no matching file with phases could be found.
@@ -151,6 +154,13 @@ def add_phases(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, pha
         mtz, handler = find_phase_file(file, apo_mtzs_path, parser)
         if handler > 0:
             phases_df = rs.read_mtz(mtz)
+            
+            # add Rfree from phase mtz to reconstructed mtz, if not existing, generate rfree flags
+            try:
+                current = rs.utils.copy_rfree(current, phases_df, rfree_key=rfree_label_in)
+            except:
+                current = rs.utils.add_rfree(current)
+            
             try:    
                 current[phase_2FOFC_col_out] = phases_df[phase_2FOFC_col_in]
                 current[phase_FOFC_col_out]  = phases_df[phase_FOFC_col_in]
@@ -309,6 +319,7 @@ def add_phases_from_pool_map(file, additional_args):
     phase_2FOFC_col_in                 = additional_args[4]
     phase_FOFC_col_in                  = additional_args[5]
     parser                             = additional_args[6]
+    rfree_label_in                     = additional_args[7]
     
     current = rs.read_mtz(file)
     success=False
@@ -316,6 +327,13 @@ def add_phases_from_pool_map(file, additional_args):
     mtz, handler = find_phase_file(file, apo_mtzs_path, parser)
     if handler > 0:
         phases_df = rs.read_mtz(mtz)
+
+        # add Rfree from phase mtz to reconstructed mtz, if not existing, generate rfree flags
+        try:
+            current = rs.utils.copy_rfree(current, phases_df, rfree_key=rfree_label_in)
+        except:
+            current = rs.utils.add_rfree(current)
+            
         try:    
             current[phase_2FOFC_col_out] = phases_df[phase_2FOFC_col_in]
             current[phase_FOFC_col_out]  = phases_df[phase_FOFC_col_in]
@@ -334,7 +352,7 @@ def add_phases_from_pool_map(file, additional_args):
     return [file, success]
 
 
-def add_phases_pool(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, phase_2FOFC_col_out='PH2FOFCWT', phase_FOFC_col_out='PHFOFCWT',phase_2FOFC_col_in='PH2FOFCWT', phase_FOFC_col_in='PHFOFCWT',prefix=None, parser=None, ncpu=None):
+def add_phases_pool(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path, phase_2FOFC_col_out='PH2FOFCWT', phase_FOFC_col_out='PHFOFCWT',phase_2FOFC_col_in='PH2FOFCWT', phase_FOFC_col_in='PHFOFCWT', prefix=None, parser=None, ncpu=None, rfree_label_in=None):
     """
     Add phases from apo models refined against the data (or otherwise) to the corresponding files in file_list and 
     write the resulting MTZ to vae_reconstructed_with_phases_path. Filenames in the file_list and the "apo" MTZs should match (e.g., ####.mtz)
@@ -350,12 +368,13 @@ def add_phases_pool(file_list, apo_mtzs_path, vae_reconstructed_with_phases_path
             phase_FOFC_col_in (str)  : *input* MTZ column name for  Fo-Fc phases
             prefix (str) : prefix to add to pickle file report.
             ncpu (int) : Number of CPUs available
+            rfree_label_in (None or str)  : *input* MTZ column name for Rfree flags
 
         Returns:
             a dataframe reporting for each dataset whether phases were successfully added.
     """
 
-    additional_args=[apo_mtzs_path, vae_reconstructed_with_phases_path, phase_2FOFC_col_out, phase_FOFC_col_out,phase_2FOFC_col_in, phase_FOFC_col_in,parser]
+    additional_args=[apo_mtzs_path, vae_reconstructed_with_phases_path, phase_2FOFC_col_out, phase_FOFC_col_out, phase_2FOFC_col_in, phase_FOFC_col_in, parser, rfree_label_in]
     input_args = zip(file_list, repeat(additional_args))
     with Pool(ncpu) as pool:
         metrics = pool.starmap(add_phases_from_pool_map, tqdm(input_args, total=len(file_list)))
