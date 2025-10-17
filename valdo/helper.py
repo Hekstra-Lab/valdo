@@ -65,6 +65,7 @@ def standardize_single_mtzs(filename, additional_args):
     source_path     =additional_args[0]
     destination_path=additional_args[1]
     pattern         =additional_args[2]
+    expcolumns      =additional_args[3]
     
     # Check if the file matches the pattern
     match = re.match(pattern, filename)
@@ -79,12 +80,11 @@ def standardize_single_mtzs(filename, additional_args):
         tmp_source_path = os.path.join(source_path, filename)
         tmp_destination_path = os.path.join(destination_path, new_filename)
         
-        # Copy the file to the destination folder with the new name
-        # print(source_path)
-        # print(destination_path)
+        # We drop nan values here to avoid issues with downstream processing
         try:
-            shutil.copy(tmp_source_path, tmp_destination_path)
-            return new_filename
+            mtz_original = rs.read_mtz(tmp_source_path)
+            mtz_original = mtz_original.dropna(axis=0, subset=expcolumns)
+            mtz_original.write_mtz(tmp_source_path)
         except Exception as e:
             print(e)
             return None
@@ -92,7 +92,7 @@ def standardize_single_mtzs(filename, additional_args):
         print("No match for " + filename)
         return None
 
-def standardize_input_mtzs(source_path, destination_path, mtz_file_pattern, ncpu=1):
+def standardize_input_mtzs(source_path, destination_path, mtz_file_pattern, expcolumns, ncpu=1):
     """
     Prepare the raw observed (inut) MTZ files by copying them to the pipeline folder and standardizing their names.
 
@@ -110,7 +110,7 @@ def standardize_input_mtzs(source_path, destination_path, mtz_file_pattern, ncpu
     print("Copying & renaming " + str(len(file_list)) + " MTZ files from " + source_path + " to " + destination_path)
     
 
-    additional_args=[source_path, destination_path, mtz_file_pattern]
+    additional_args=[source_path, destination_path, mtz_file_pattern, expcolumns]
     if ncpu>1:
         with Pool(ncpu) as pool:
             result = pool.starmap(standardize_single_mtzs, zip(file_list,repeat(additional_args)))
