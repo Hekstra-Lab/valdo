@@ -84,7 +84,8 @@ def standardize_single_mtzs(filename, additional_args):
         try:
             mtz_original = rs.read_mtz(tmp_source_path)
             mtz_original = mtz_original.dropna(axis=0, subset=expcolumns)
-            mtz_original.write_mtz(tmp_source_path)
+            mtz_original.write_mtz(tmp_destination_path)
+            return new_filename
         except Exception as e:
             print(e)
             return None
@@ -108,7 +109,6 @@ def standardize_input_mtzs(source_path, destination_path, mtz_file_pattern, expc
     # Get a list of all files in the source folder
     file_list = glob.glob(source_path + "*.mtz")
     print("Copying & renaming " + str(len(file_list)) + " MTZ files from " + source_path + " to " + destination_path)
-    
 
     additional_args=[source_path, destination_path, mtz_file_pattern, expcolumns]
     if ncpu>1:
@@ -119,6 +119,7 @@ def standardize_input_mtzs(source_path, destination_path, mtz_file_pattern, expc
         result=[]
         for filename in tqdm(file_list):
             result.append(standardize_single_mtzs(filename, additional_args))
+    # print(result)
     result = [i for i in result if i is not None]
     return result
  
