@@ -100,7 +100,7 @@ def blob_helper(file, model_folder, diff_col, phase_col, output_folder, cutoff=4
     
     try:
         try:
-            print(os.path.join(model_folder, f"{sample_id}.pdb"))
+            # print(os.path.join(model_folder, f"{sample_id}.pdb"))
             structure = gemmi.read_pdb(os.path.join(model_folder, f"{sample_id}.pdb"))
         except: 
             structure = gemmi.read_pdb(glob.glob(os.path.join(model_folder, f"*{sample_id}*.pdb"))[0])
