@@ -9,7 +9,7 @@ from itertools import repeat
 from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors       import KNeighborsRegressor
 import pickle
-# from valdo import knn_tools as knn
+from valdo import knn_tools as knn
 
 
 def weighted_pearsonr(ds1,ds2,data_col="F-obs"):
@@ -166,7 +166,7 @@ def apply_local_scale(ds_input, ds_ref, columns=['F-obs', 'SIGF-obs'],corrected_
         knn_1 = GridSearchCV(KNeighborsRegressor(n_jobs=ncpu),param_grid=param_grid)
         knn_1.fit(ds12_filtered[["rs_a", "rs_b", "rs_c"]].to_numpy(), (ds12_filtered["RATIO"].to_numpy())) # these should be corrected for eps already
     else:
-        knn_1 = KNeighborsRegressor(800, weights=knn.knn_weight_exp_p05,n_jobs=ncpu)
+        knn_1 = KNeighborsRegressor(200, weights=knn.knn_weight_exp_p05,n_jobs=ncpu)
         knn_1.fit(ds12_filtered[["rs_a", "rs_b", "rs_c"]], (ds12_filtered[["RATIO"]].to_numpy()))
 
     inferred_ratio = knn_1.predict(ds12[["rs_a", "rs_b", "rs_c"]]).reshape(-1,1).flatten()
@@ -230,7 +230,7 @@ def reindex_from_pool_map(input_file, additional_args):
             symopi_asu = input_df.apply_symop(op).hkl_to_asu()
             # symopi_asu = apply_local_scale(symopi_asu, reference_asu,corrected_input_only=True)
             if wcorr:
-                corr_ref.append(weighted_pearsonr(reference_asu,symopi_asu,data_col="F-obs"))
+                corr_ref.append(weighted_pearsonr(reference_asu,symopi_asu,data_col=columns[0]))
             else:
                 mergedi = reference_asu.merge(symopi_asu, left_index=True, right_index=True, suffixes=('_ref', '_input'), check_isomorphous=check_isomorphous)
                 corr_ref.append(np.corrcoef(mergedi[columns[0]+'_ref'], mergedi[columns[0]+'_input'])[0][1])
