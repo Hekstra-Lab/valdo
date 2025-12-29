@@ -1,4 +1,4 @@
-# *V*ae *A*ssisted *L*igand *D*isc*O*very (Valdo)
+# *V*ae *A*ssisted *L*igand *D*isc*O*very (VALDO)
 
 [![PyPI](https://img.shields.io/pypi/v/rs-valdo?color=blue)](https://pypi.org/project/rs-valdo/)
 
