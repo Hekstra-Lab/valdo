@@ -4,13 +4,14 @@ import glob
 import re
 import shutil
 import warnings
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 from itertools import repeat
 from tqdm import tqdm
 import torch
 import pandas as pd
 import numpy as np
 import reciprocalspaceship as rs
+import gemmi
 
 def try_gpu(i=0):
     if torch.cuda.device_count() >= i + 1:
@@ -544,3 +545,261 @@ def extrapolate(file_list, F_col="F-obs-scaled", sigF_col="SIGF-obs-scaled", rec
             result.append(extrapolate_single_file(filename, additional_args))
 
     return result
+
+# avoid OpenMP oversubscription when also using multiprocessing
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
+def _pick(df_cols, *candidates, required=True, label="column"):
+    """Find the first matching column name from candidates (case-insensitive)."""
+    cols_l = {str(c).lower(): c for c in df_cols}
+    for cand in candidates:
+        if str(cand).lower() in cols_l:
+            return cols_l[str(cand).lower()]
+    if required:
+        raise KeyError(f"Missing required {label}. Tried: {candidates}")
+    return None
+
+
+def _export_one_dataset(args):
+    """
+    Worker: writes maps for one dtag and returns (dtag, ev_rows, site_rows, log_msgs).
+    Expects df_ev to have ONLY normalized columns:
+      ['_event_num','_site_num','_x','_y','_z','_cluster_size']
+    """
+    (dtag, df_ev, mtz_dir, out_root, wdf_label, phase_label, esfn, recon_label,
+     mtz_pattern, input_pdb_dir, input_pdb_pattern, input_map_mtz_dir,
+     input_map_mtz_pattern, use_new_style, default_rwork, default_rfree) = args
+
+    log = []
+    ev_rows = []
+    site_rows = []
+
+    try:
+        dtag = str(dtag)
+        ddir = os.path.join(out_root, "processed_datasets", dtag)
+        os.makedirs(ddir, exist_ok=True)
+
+        mtz_path = os.path.join(mtz_dir, mtz_pattern.format(dtag=dtag))
+        if not os.path.exists(mtz_path):
+            log.append(f"[{dtag}] MTZ not found: {mtz_path}")
+            return (dtag, ev_rows, site_rows, log)
+
+        # read mtz
+        try:
+            ds = rs.read_mtz(mtz_path)
+        except Exception as e:
+            log.append(f"[{dtag}] Failed to read MTZ: {mtz_path} ({e})")
+            return (dtag, ev_rows, site_rows, log)
+
+        esf_label = f"ESF_{esfn}"
+        for need in (wdf_label, phase_label, esf_label):
+            if need not in ds.columns:
+                raise KeyError(f"[{dtag}] Missing column '{need}' in {os.path.basename(mtz_path)}")
+
+        # optional inputs for (2)Fo-Fc/Fo-Fc and model
+        if input_pdb_dir:
+            src_pdb = os.path.join(input_pdb_dir, input_pdb_pattern.format(dtag=dtag))
+            if os.path.exists(src_pdb):
+                shutil.copy(src_pdb, os.path.join(ddir, f"{dtag}-pandda-input.pdb"))
+            else:
+                log.append(f"[{dtag}] Input PDB not found: {src_pdb}")
+        if input_map_mtz_dir:
+            src_mapmtz = os.path.join(input_map_mtz_dir, input_map_mtz_pattern.format(dtag=dtag))
+            if os.path.exists(src_mapmtz):
+                shutil.copy(src_mapmtz, os.path.join(ddir, f"{dtag}-pandda-input.mtz"))
+            else:
+                log.append(f"[{dtag}] Input map MTZ not found: {src_mapmtz}")
+
+        # --- Z / average MTZ ---
+        out_zavg = os.path.join(ddir, f"{dtag}-pandda-output.mtz")
+        zavg = ds[[wdf_label, phase_label]].copy()
+        zavg = zavg.rename(columns={wdf_label: "FZVALUES", phase_label: "PHZVALUES"})
+        zavg["FZVALUES"] = zavg["FZVALUES"].astype("F")
+        zavg["PHZVALUES"] = zavg["PHZVALUES"].astype("P")
+        if recon_label and recon_label in ds.columns:
+            zavg["FGROUND"] = ds[recon_label].astype("F")
+            zavg["PHGROUND"] = ds[phase_label].astype("P")
+        zavg.write_mtz(out_zavg)
+
+        one_minus_bdc = 1.0 / float(esfn)
+
+        # Per-event MTZs + CSV rows
+        for _, ev in df_ev.iterrows():
+            i_ev = int(ev["_event_num"])
+
+            if use_new_style:
+                out_event = os.path.join(ddir, f"{dtag}-pandda-output-event-{i_ev:03d}.mtz")
+                evds = ds[[esf_label, phase_label]].copy()
+                evds = evds.rename(columns={esf_label: "FEVENT", phase_label: "PHEVENT"})
+                evds["FEVENT"] = evds["FEVENT"].astype("F")
+                evds["PHEVENT"] = evds["PHEVENT"].astype("P")
+                evds.write_mtz(out_event)
+            else:
+                out_event = os.path.join(ddir, f"{dtag}-event_{i_ev}_1-BDC_{one_minus_bdc:.3f}_map.native.mtz")
+                evds = ds[[esf_label, phase_label]].copy()
+                evds = evds.rename(columns={esf_label: "FWT", phase_label: "PHWT"})
+                evds["FWT"] = evds["FWT"].astype("F")
+                evds["PHWT"] = evds["PHWT"].astype("P")
+                evds.write_mtz(out_event)
+
+            # analysed_resolution via Gemmi
+            mtz_g = gemmi.read_mtz_file(os.fspath(mtz_path))
+            analysed_resolution = f"{mtz_g.resolution_high():.3f}"
+
+            ev_rows.append({
+                "dtag": dtag,
+                "event_num": i_ev,
+                "site_num": int(ev["_site_num"]) if pd.notna(ev["_site_num"]) else i_ev,
+                "1-BDC": f"{one_minus_bdc:.6f}",
+                "x": float(ev["_x"]),
+                "y": float(ev["_y"]),
+                "z": float(ev["_z"]),
+                "analysed_resolution": analysed_resolution,
+                "r_work": default_rwork,
+                "r_free": default_rfree,
+                "Viewed": "False",
+                "cluster_size": (int(ev["_cluster_size"]) if pd.notna(ev.get("_cluster_size")) else ""),
+            })
+
+        # Sites table (unique per dataset)
+        for s in sorted(set(pd.to_numeric(df_ev["_site_num"], errors="coerce").dropna().astype(int).tolist())):
+            site_rows.append({"site_num": int(s), "dtag": dtag})
+
+    except Exception as e:
+        log.append(f"[{dtag}] ERROR: {e}")
+
+    return (dtag, ev_rows, site_rows, log)
+
+
+def export_valdo_to_pandda_inspect(
+    blobs_pickle,
+    mtz_dir,
+    out_root,
+    *,
+    wdf_label="WDF",
+    phase_label="Refine_PH2FOFCWT",
+    esfn=8,
+    recon_label=None,
+    mtz_pattern="{dtag}.mtz",
+    input_pdb_dir=None,
+    input_pdb_pattern="{dtag}.pdb",
+    input_map_mtz_dir=None,
+    input_map_mtz_pattern="{dtag}.mtz",
+    use_new_style=True,
+    default_rwork="NA",
+    default_rfree="NA",
+    top_n=200,               # export only the top-N blobs globally (by score if present)
+    n_procs=1,               # number of worker processes
+):
+    """
+    Faster VALDO → PanDDA export with top-N filter and per-dataset parallelization.
+
+    - top_n: If 'score' exists, pick the top-N rows across ALL blobs by descending score.
+             Else, take the first N rows in the pickle. Events renumber per-dtag.
+    - n_procs: Number of worker processes (<= cpu_count()).
+    """
+    # Normalize paths
+    blobs_pickle = os.fspath(blobs_pickle)
+    mtz_dir = os.fspath(mtz_dir)
+    out_root = os.fspath(out_root)
+    if input_pdb_dir is not None:
+        input_pdb_dir = os.fspath(input_pdb_dir)
+    if input_map_mtz_dir is not None:
+        input_map_mtz_dir = os.fspath(input_map_mtz_dir)
+
+    os.makedirs(os.path.join(out_root, "processed_datasets"), exist_ok=True)
+    os.makedirs(os.path.join(out_root, "results"), exist_ok=True)
+
+    # Load blobs
+    blobs = pd.read_pickle(blobs_pickle)
+    if not isinstance(blobs, pd.DataFrame):
+        raise TypeError(f"Pickle did not contain a pandas DataFrame: {type(blobs)}")
+
+    # Resolve columns
+    col_dtag  = _pick(blobs.columns, "dtag", "dataset", "sample", "id", label="dtag")
+    col_x     = _pick(blobs.columns, "x", "cart_x", "x_Å", "x_A", "cenx", "center_x", label="x")
+    col_y     = _pick(blobs.columns, "y", "cart_y", "y_Å", "y_A", "ceny", "center_y", label="y")
+    col_z     = _pick(blobs.columns, "z", "cart_z", "z_Å", "z_A", "cenz", "center_z", label="z")
+    col_site  = _pick(blobs.columns, "site", "site_id", "site_num", required=False, label="site")
+    col_score = _pick(blobs.columns, "score", "zscore", "z", "peak_value", required=False, label="score")
+    col_size  = _pick(blobs.columns, "cluster_size", "n_voxels", "size", "members", required=False, label="cluster_size")
+
+    # Top-N across ALL blobs
+    if col_score and col_score in blobs.columns:
+        blobs_top = blobs.sort_values(col_score, ascending=False).head(int(top_n)).copy()
+    else:
+        blobs_top = blobs.head(int(top_n)).copy()
+
+    # Pre-normalize for workers
+    blobs_top["_dtag"] = blobs_top[col_dtag].astype(str)
+    blobs_top["_x"] = pd.to_numeric(blobs_top[col_x], errors="coerce")
+    blobs_top["_y"] = pd.to_numeric(blobs_top[col_y], errors="coerce")
+    blobs_top["_z"] = pd.to_numeric(blobs_top[col_z], errors="coerce")
+    blobs_top["_site_num"] = (
+        pd.to_numeric(blobs_top[col_site], errors="coerce") if (col_site and col_site in blobs_top.columns)
+        else pd.NA
+    )
+    blobs_top["_cluster_size"] = (
+        pd.to_numeric(blobs_top[col_size], errors="coerce") if (col_size and col_size in blobs_top.columns)
+        else pd.NA
+    )
+
+    # Per-dtag group with local event numbering
+    groups = []
+    for dtag, df in blobs_top.groupby("_dtag"):
+        if col_score and col_score in df.columns:
+            df = df.sort_values(col_score, ascending=False).reset_index(drop=True)
+        else:
+            df = df.reset_index(drop=True)
+        df["_event_num"] = np.arange(1, len(df) + 1, dtype=int)
+        if df["_site_num"].isna().all():
+            df["_site_num"] = df["_event_num"]
+        groups.append((dtag, df))
+
+    # Build worker args
+    worker_args = [
+        (dtag, df_ev[["_event_num", "_site_num", "_x", "_y", "_z", "_cluster_size"]],
+         mtz_dir, out_root, wdf_label, phase_label, esfn, recon_label,
+         mtz_pattern, input_pdb_dir, input_pdb_pattern, input_map_mtz_dir,
+         input_map_mtz_pattern, use_new_style, default_rwork, default_rfree)
+        for (dtag, df_ev) in groups
+    ]
+
+    # Run workers
+    results = []
+    if int(n_procs) > 1:
+        procs = min(int(n_procs), cpu_count())
+        chunksize = max(1, len(worker_args) // (procs * 4))
+        with Pool(processes=procs) as pool:
+            for r in pool.imap_unordered(_export_one_dataset, worker_args, chunksize=chunksize):
+                results.append(r)
+    else:
+        for args in worker_args:
+            results.append(_export_one_dataset(args))
+
+    # Collect rows / logs
+    all_ev_rows, all_site_rows = [], []
+    msgs = []
+    for dtag, ev_rows, site_rows, log in results:
+        all_ev_rows.extend(ev_rows)
+        all_site_rows.extend(site_rows)
+        msgs.extend(log)
+
+    # Write CSVs
+    ev_df = pd.DataFrame(all_ev_rows, columns=[
+        "dtag","event_num","site_num","1-BDC","x","y","z",
+        "analysed_resolution","r_work","r_free","Viewed","cluster_size"
+    ])
+    si_df = pd.DataFrame(all_site_rows, columns=["site_num","dtag"])
+
+    ev_out = os.path.join(out_root, "results", "pandda_analyse_events.csv")
+    si_out = os.path.join(out_root, "results", "pandda_analyse_sites.csv")
+    ev_df.to_csv(ev_out, index=False)
+    si_df.to_csv(si_out, index=False)
+
+    for m in msgs:
+        warnings.warn(m)
+
+    print(f"Wrote {len(ev_df)} events from {ev_df['dtag'].nunique()} datasets → {out_root} (top_n={top_n}, n_procs={n_procs})")
+    return out_root
+
