@@ -9,7 +9,7 @@ Usage
 Available stages
 ----------------
     standardize          Rename and copy raw MTZ files to a standard naming scheme
-    reindex              Correct indexing ambiguity using twin laws (optional)
+    reindex              Correct indexing ambiguity if present (optional)
     scale                Anisotropically scale all datasets to a reference
     preprocess           Build VAE input/output arrays (intersection, union, Z-score)
     train                Train the VAE model
@@ -349,8 +349,8 @@ ncpu: 1                                         # optional, default 1
 """,
     "reindex": """\
 # valdo.pipeline reindex config
-# Corrects indexing ambiguity using gemmi twin laws.
-# This stage can be SKIPPED if the spacegroup has no twin laws; the function
+# Corrects indexing ambiguity if present.
+# This stage can be SKIPPED if no ambiguity is detected; the function
 # will print "No ambiguity for this spacegroup!" and write no output files.
 # When skipping, pass the standardize output directly to scale.
 input_files: "/path/to/input_mtzs/*.mtz"       # glob or explicit list

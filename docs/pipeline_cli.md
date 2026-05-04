@@ -56,13 +56,12 @@ Square brackets indicate an **optional** stage.
 
 ## Skipping the Reindex Stage
 
-The `reindex` stage corrects **indexing ambiguity** — situations where multiple
-symmetry operations (twin laws) could describe the same diffraction lattice. For
-many spacegroups this ambiguity does not exist and the step can be skipped entirely.
+The `reindex` stage corrects **indexing ambiguity**, which may or may not be
+present depending on the dataset. It can be skipped entirely when no ambiguity exists.
 
 ### How to check
 
-Run the reindex stage once. If the spacegroup has no twin laws, the function prints:
+Run the reindex stage once. If no ambiguity is detected, the function prints:
 
 ```
 No ambiguity for this spacegroup! No need to reindex!
@@ -123,7 +122,7 @@ ncpu: 1                                   # optional, default 1
 
 ### `reindex` *(optional)*
 
-Corrects indexing ambiguity. Returns early with no output if the spacegroup has no twin laws.
+Corrects indexing ambiguity. Returns early with no output if no ambiguity is detected.
 
 ```yaml
 input_files: "/path/to/input_mtzs/*.mtz"
