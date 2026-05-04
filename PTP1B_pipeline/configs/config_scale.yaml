@@ -1,0 +1,9 @@
+file_list: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/reindexed/*.mtz"
+reference_mtz: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/reindexed/0001_0.mtz"
+columns:
+  - "F-obs"
+  - "SIGF-obs"
+output_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/"
+prefix: "ptp1b_"
+when_opt: 0.2
+ncpu: 8

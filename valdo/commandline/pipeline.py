@@ -233,6 +233,9 @@ def run_train(cfg):
 
     device = try_gpu()
 
+    activation_map = {"relu": torch.relu, "tanh": torch.tanh, "sigmoid": torch.sigmoid}
+    activation = activation_map.get(cfg["activation"], torch.relu)
+
     def to_tensor(arr):
         return torch.tensor(arr, dtype=torch.float32).to(device)
 
@@ -246,6 +249,7 @@ def run_train(cfg):
         n_dim_latent=cfg["latent_dim"],
         n_hidden_layers=cfg["n_hidden_layers"],
         n_hidden_size=cfg["n_hidden_size"],
+        activation=activation,
         device=device,
     )
     optim = torch.optim.Adam(vae_model.parameters(), lr=cfg["learning_rate"])
@@ -263,6 +267,28 @@ def run_train(cfg):
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
     vae_model.save(cfg["output_path"])
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    loss_array = np.array(vae_model.loss_train)
+    plot_dir = output_dir or "."
+    fig, axs = plt.subplots(3, 1, figsize=(6, 8))
+    labels = [("Total Loss", 0, 3), ("NLL", 1, 4), ("KL Divergence", 2, 5)]
+    for ax, (name, ti, vi) in zip(axs, labels):
+        if loss_array.shape[1] > vi:
+            ax.plot(loss_array[:, ti], label=f"{name}, Training")
+            ax.plot(loss_array[:, vi], label=f"{name}, Validation")
+        else:
+            ax.plot(loss_array[:, ti], label=f"{name}, Training")
+        ax.set_xlabel("Steps")
+        ax.legend()
+        ax.grid()
+    plt.tight_layout()
+    plot_path = os.path.join(plot_dir, "vae_loss_curves.png")
+    plt.savefig(plot_path, dpi=150)
+    plt.close()
+    print(f"Loss curves saved to {plot_path}")
 
 
 def run_reconstruct(cfg):
@@ -504,9 +530,10 @@ batch_size: 100
 learning_rate: 0.001
 w_kl: 1.0
 eps: 0.02
-stdof: null                                     # null = Gaussian ELBO; integer = Student-t df
+stdof: 128                                      # null = Gaussian ELBO; integer = Student-t df (128 recommended)
 include_errors: true
 random_seed: 42
+activation: "relu"
 """,
     "reconstruct": """\
 # valdo.pipeline reconstruct config
@@ -514,7 +541,7 @@ random_seed: 42
 vae_path: "/path/to/vae/trained_vae.pkl"
 vae_input_path: "/path/to/vae/vae_input.npy"
 output_path: "/path/to/vae/recons/recons.npy"
-ml_recon: false                                 # true = MAP (deterministic); false = sample
+ml_recon: true                                  # true = MAP (deterministic); false = sample
 repeats: 1                                      # >1 saves mean+std array of shape [2, N, M]
 """,
     "rescale": """\
@@ -549,17 +576,17 @@ rfree_label_in: null                           # input R-free column name, or nu
 # Weighting
 sigF_col: "SIGF-obs-scaled"
 diff_col: "diff"
-sigdF_pct: 90.0
+sigdF_pct: 95.0
 absdF_pct: 99.99
 # Extrapolation
 F_col: "F-obs-scaled"
 recons_col: "recons"
-extrapolate_factors: [2, 4, 8]
+extrapolate_factors: [2, 4, 6, 8, 16]
 # Blob detection
 blob_diff_col: "WDF"                           # weighted difference column
 phase_col: "PH2FOFCWT"
-cutoff: 5.0                                    # blob significance threshold (sigma)
-radius_in_A: 5.0                               # Gaussian blur radius
+cutoff: 3.5                                    # blob significance threshold (sigma)
+radius_in_A: 4.0                               # Gaussian blur radius
 prefix: ""
 ncpu: 1
 """,
