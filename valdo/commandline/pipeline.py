@@ -449,11 +449,13 @@ def run_add_phases_and_blobs(cfg):
 
 
 def run_tag_blobs(cfg):
+    import tempfile
     import pandas as pd
     import valdo.tag as tag
 
     blob_df = pd.read_pickle(cfg["blob_stats_path"])
 
+    # Tag blobs near the focal residue (e.g. Cys215) using per-dataset refined PDBs
     blob_df = tag.tag_blobs_around_seqid(
         blob_df,
         cfg["model_folder"],
@@ -462,7 +464,43 @@ def run_tag_blobs(cfg):
         focal_seqid=cfg["focal_seqid"],
         ncpu=cfg["ncpu"],
     )
-    blob_df = tag.tag_lig_blobs(blob_df, cfg["model_folder"], ncpu=cfg["ncpu"])
+
+    # Optionally tag ligand-containing blobs using known bound structures.
+    # If bound_models_folder is not provided, skip this step (bound=0, ligand=0 for all).
+    if cfg.get("bound_models_folder"):
+        import re
+        import tempfile
+        # bound_models_folder contains flat PDB files named like y0049_og_superposed.pdb.
+        # Extract the numeric ID (strip leading alpha prefix).
+        bound_models_folder = cfg["bound_models_folder"].rstrip("/") + "/"
+        bound_samples = set()
+        pdb_map = {}   # numeric_id -> absolute pdb path
+        for pdb_path in glob.glob(os.path.join(bound_models_folder, "*.pdb")):
+            stem = os.path.basename(pdb_path)
+            m = re.match(r"[a-zA-Z]*(\d+)", stem)
+            if m:
+                num = m.group(1)
+                bound_samples.add(num)
+                pdb_map[num] = pdb_path
+        blob_df["bound"] = blob_df["sample"].apply(
+            lambda x: 1 if x.split("_")[0] in bound_samples else 0
+        )
+        print(f"Marked {blob_df['bound'].sum()} blobs from {len(bound_samples)} bound datasets")
+
+        # tag_lig_blobs expects files named {number}.pdb — create a temp dir with symlinks
+        tmp_dir = tempfile.mkdtemp(prefix="valdo_bound_pdbs_")
+        try:
+            for num, src in pdb_map.items():
+                os.symlink(src, os.path.join(tmp_dir, f"{num}.pdb"))
+            blob_df = tag.tag_lig_blobs(blob_df, tmp_dir + "/", ncpu=cfg["ncpu"])
+        finally:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+    else:
+        blob_df["bound"] = 0
+        blob_df["ligand"] = 0
+        print("No bound_models_folder provided; skipping ligand tagging (bound=0, ligand=0)")
+
     blob_df = tag.determine_locations(blob_df, cfg["mtz_folder"], ncpu=cfg["ncpu"])
     blob_df = tag.mark_duplicates(blob_df)
 
@@ -640,13 +678,16 @@ ncpu: 1
 # Tags blobs by proximity to a focal residue and known ligands, removes duplicates,
 # and saves both the full tagged DataFrame and a filtered one.
 blob_stats_path: "/path/to/vae/blobs/blob_stats.pkl"
-model_folder: "/path/to/refined/"
+model_folder: "/path/to/refined/"       # per-dataset PDB files, e.g. refine_output/
 mtz_folder: "/path/to/vae/recons_phased/"
 # Focal residue to exclude (e.g. Cys215 in PTP1B — a known false-positive source)
 focal_seqid: 215
 focal_tag_name: "cys215"
 focal_radius: 5.0
 output_folder: "/path/to/vae/blobs/"
+# Optional: flat folder of known bound-state PDB files (e.g. y0049_og_superposed.pdb).
+# If omitted, ligand tagging is skipped and bound/ligand columns are set to 0.
+# bound_models_folder: "/path/to/bound_models/"
 ncpu: 1
 """,
 }

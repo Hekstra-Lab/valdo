@@ -155,3 +155,39 @@ Reverses the Z-score normalization to recover original-scale amplitudes, and com
 - **Output:** `vae/recons/####_{symop}.mtz` — 1,650 MTZ files with added `recons` and `diff` columns
 
 ---
+
+## Step 8: Add Phases and Blobs
+
+Transfers phases from the PHENIX apo-refined reference MTZ to each reconstructed dataset,
+applies sigma-weighted difference map weights, extrapolates structure factor amplitudes,
+and detects electron density blobs via Gaussian-blurred flood-fill.
+
+- **Config:** `configs/config_add_phases_and_blobs.yaml`
+- **Command:** `valdo.pipeline add_phases_and_blobs configs/config_add_phases_and_blobs.yaml`
+- **Input:** `vae/recons/*.mtz` (1,650 files), `refine_1nwl/refine_output/` (phase + model source)
+- **Output:**
+  - `vae/recons_phased/####_{symop}.mtz` — 802 phased MTZ files with `WT`, `WDF`, `ESF_2`, `ESF_4`, `ESF_6`, `ESF_8`, `ESF_16` columns added
+  - `vae/blobs/blob_stats.pkl` — 9,318 blobs across all datasets (columns: `sample`, `peakz`, `peak`, `score`, `cenx`, `ceny`, `cenz`, `volume`, `radius`)
+
+Note: 802 phased MTZ files were produced (vs 1,650 input). Datasets without a matching phase file in `refine_output/` are silently skipped by `add_phases`.
+
+---
+
+## Step 9: Tag Blobs
+
+Tags each detected blob by proximity to the PTP1B active-site residue Cys215 and to known
+bound ligands, determines fractional coordinates and all symmetry-related positions, and
+filters out active-site blobs and spatial duplicates.
+
+- **Config:** `configs/config_tag_blobs.yaml`
+- **Command:** `valdo.pipeline tag_blobs configs/config_tag_blobs.yaml`
+- **Input:** `vae/blobs/blob_stats.pkl`, per-dataset PDB files from `refine_1nwl/refine_output/`, phased MTZ files from `vae/recons_phased/`
+- **Output:**
+  - `vae/blobs/blob_stats_tagged.pkl` — 9,318 blobs with added `bound`, `cys215`, `ligand`, `duplicate`, `fractional`, `all_possible_frac`, `all_possible_cart` columns
+  - `vae/blobs/filtered_blob_stats_tagged.pkl` — 8,316 blobs with `cys215 == 0` and `duplicate == 0`
+
+624 blobs were from 141 known-bound datasets. Active-site or duplicate blobs were excluded from the filtered set.
+
+Key parameters: `focal_seqid: 215`, `focal_radius: 5.0 Å`, `focal_tag_name: cys215`, `ncpu: 8`
+
+---

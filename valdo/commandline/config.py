@@ -106,6 +106,7 @@ STAGE_SCHEMAS = {
     "tag_blobs": [
         ("blob_stats_path",    str,         True,  None),
         ("model_folder",       str,         True,  None),
+        ("bound_models_folder",str,         False, None),
         ("mtz_folder",         str,         True,  None),
         ("focal_seqid",        int,         True,  None),
         ("focal_tag_name",     str,         True,  None),
