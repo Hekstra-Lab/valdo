@@ -1,0 +1,5 @@
+vae_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/trained_vae.pkl"
+vae_input_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/vae_input.npy"
+output_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/recons/recons.npy"
+ml_recon: true
+repeats: 1

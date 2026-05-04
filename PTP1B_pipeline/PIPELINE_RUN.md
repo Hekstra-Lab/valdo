@@ -131,3 +131,27 @@ in `valdo.pipeline train` (no changes to the core library):
    Gradient clipping (`max_norm=1.0`) was also added as an additional safeguard.
 
 ---
+
+## Step 6: Reconstruct
+
+Runs the trained VAE over all 1,650 inputs to produce reconstructed structure factor amplitudes
+for the full union set (MAP reconstruction, `ml_recon: true`).
+
+- **Config:** `configs/config_reconstruct.yaml`
+- **Command:** `valdo.pipeline reconstruct configs/config_reconstruct.yaml`
+- **Input:** `vae/trained_vae.pkl`, `vae/vae_input.npy`
+- **Output:** `vae/recons/recons.npy` — shape (1650, 77821), all finite, range [-9.0, 9.3]σ
+
+---
+
+## Step 7: Rescale
+
+Reverses the Z-score normalization to recover original-scale amplitudes, and computes
+`recons` and `diff` columns for each dataset.
+
+- **Config:** `configs/config_rescale.yaml`
+- **Command:** `valdo.pipeline rescale configs/config_rescale.yaml`
+- **Input:** `vae/recons/recons.npy`, `vae/intersection.pkl`, `vae/union.pkl`, `configs/scaled_filtered_files.txt`
+- **Output:** `vae/recons/####_{symop}.mtz` — 1,650 MTZ files with added `recons` and `diff` columns
+
+---

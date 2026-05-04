@@ -1,0 +1,8 @@
+recons_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/recons/recons.npy"
+intersection_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/intersection.pkl"
+union_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/union.pkl"
+input_files: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/configs/scaled_filtered_files.txt"
+info_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/"
+output_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/recons/"
+amplitude_col: "F-obs-scaled"
+ncpu: 8
