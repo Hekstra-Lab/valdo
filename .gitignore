@@ -2,6 +2,7 @@
 dev/
 scaled_mtzs/
 *pkl
+PTP1B_pipeline/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
