@@ -46,11 +46,13 @@ valdo.pipeline standardize config_standardize.yaml
 ### Stage Dependency Diagram
 
 ```
-standardize → [reindex →] scale → preprocess → train → reconstruct
-           → rescale → add_phases_and_blobs → tag_blobs
+standardize → [reindex →] scale → preprocess → train → reconstruct → rescale ──┐
+                    │                                                             ↓
+                    └──────────── valdo.refine (PHENIX) ──────────────→ add_phases_and_blobs → tag_blobs
 ```
 
-Square brackets indicate an **optional** stage.
+Square brackets indicate an **optional** stage. `valdo.refine` can run in parallel
+with the VAE stages (`preprocess` through `rescale`) since they use independent inputs.
 
 ---
 
@@ -237,6 +239,36 @@ output_folder: "/path/to/vae/recons/"
 amplitude_col: "F-obs-scaled"
 ncpu: 1
 ```
+
+---
+
+### Prerequisite: apo structure refinement
+
+Before running `add_phases_and_blobs` you need apo-refined structures for every
+dataset — one PDB and one MTZ (containing phases) per dataset. Use `valdo.refine`
+to run PHENIX refinement in batch:
+
+```bash
+# If reindex was run, refine against the reindexed files:
+valdo.refine --pdbpath /path/to/apo_model.pdb \
+             --mtzpath "/path/to/reindexed/*.mtz" \
+             --output /path/to/refined/ \
+             --eff /path/to/refine_drug.eff
+
+# If reindex was skipped, refine against the standardized files instead:
+valdo.refine --pdbpath /path/to/apo_model.pdb \
+             --mtzpath "/path/to/input_mtzs/*.mtz" \
+             --output /path/to/refined/ \
+             --eff /path/to/refine_drug.eff
+```
+
+This requires PHENIX to be installed and a `.eff` refinement config file.
+The refinement output (`/path/to/refined/`) is what you point `phasing_path`
+and `model_folder` to in the `add_phases_and_blobs` config.
+
+> **Tip:** You can run refinement in parallel with the VAE training stages
+> (`preprocess`, `train`, `reconstruct`, `rescale`) since they operate on
+> independent inputs.
 
 ---
 
