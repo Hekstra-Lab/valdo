@@ -162,6 +162,10 @@ def validate_config(stage, cfg):
 def expand_glob_field(value):
     if isinstance(value, list):
         return sorted(value)
+    if isinstance(value, str) and value.endswith(".txt") and os.path.isfile(value):
+        with open(value) as f:
+            paths = [line.strip() for line in f if line.strip()]
+        return sorted(paths)
     matches = sorted(glob.glob(value))
     if not matches:
         print(f"Warning: glob pattern '{value}' matched no files.", file=sys.stderr)
