@@ -124,31 +124,66 @@ def run_reindex(cfg):
 
 
 def run_scale(cfg):
+    import pandas as pd
+    import matplotlib.pyplot as plt
     from valdo.scaling import Scaler, Scaler_pool
-    file_list = expand_glob_field(cfg["file_list"])
+
     os.makedirs(cfg["output_folder"], exist_ok=True)
-    if cfg["ncpu"] > 1:
-        scaler = Scaler_pool(
-            reference_mtz=cfg["reference_mtz"],
-            columns=cfg["columns"],
-            ncpu=cfg["ncpu"],
-        )
-        scaler.batch_scaling(
-            mtz_path_list=file_list,
-            outputmtz_path=cfg["output_folder"],
-            prefix=cfg["prefix"],
-        )
+    metrics_path = os.path.join(cfg["output_folder"], cfg["prefix"] + "scaling_metrics.pkl")
+
+    if os.path.isfile(metrics_path):
+        print(f"Found existing scaling_metrics.pkl — skipping scaling, generating plots only.")
+        metrics_df = pd.read_pickle(metrics_path)
     else:
-        scaler = Scaler(
-            reference_mtz=cfg["reference_mtz"],
-            columns=cfg["columns"],
-        )
-        scaler.batch_scaling(
-            mtz_path_list=file_list,
-            outputmtz_path=cfg["output_folder"],
-            prefix=cfg["prefix"],
-            when_opt=cfg["when_opt"],
-        )
+        file_list = expand_glob_field(cfg["file_list"])
+        if cfg["ncpu"] > 1:
+            scaler = Scaler_pool(
+                reference_mtz=cfg["reference_mtz"],
+                columns=cfg["columns"],
+                ncpu=cfg["ncpu"],
+            )
+            scaler.batch_scaling(
+                mtz_path_list=file_list,
+                outputmtz_path=cfg["output_folder"],
+                prefix=cfg["prefix"],
+            )
+        else:
+            scaler = Scaler(
+                reference_mtz=cfg["reference_mtz"],
+                columns=cfg["columns"],
+            )
+            scaler.batch_scaling(
+                mtz_path_list=file_list,
+                outputmtz_path=cfg["output_folder"],
+                prefix=cfg["prefix"],
+                when_opt=cfg["when_opt"],
+            )
+        metrics_df = pd.read_pickle(metrics_path)
+
+    # Plot 1: histogram of end_corr
+    fig, ax = plt.subplots()
+    ax.hist(metrics_df["end_corr"].to_numpy(), bins=20)
+    ax.set_xlabel("Correlation after scaling")
+    ax.set_ylabel("Count per bin")
+    ax.grid(True)
+    hist_path = os.path.join(cfg["output_folder"], cfg["prefix"] + "scaling_end_corr_histogram.png")
+    fig.savefig(hist_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {hist_path}")
+
+    # Plot 2: start_LS vs end_LS with diagonal
+    fig, ax = plt.subplots()
+    ax.plot(metrics_df["start_LS"].to_numpy(), metrics_df["end_LS"].to_numpy(), ".", alpha=0.25)
+    xlim = ax.get_xlim()
+    ax.plot(xlim, xlim, "r-")
+    ax.set_xlim(xlim)
+    ax.set_xlabel("Starting LS")
+    ax.set_ylabel("Final LS")
+    ax.grid(True)
+    scatter_path = os.path.join(cfg["output_folder"], cfg["prefix"] + "scaling_LS_scatter.png")
+    fig.savefig(scatter_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {scatter_path}")
 
 
 def run_preprocess(cfg):
