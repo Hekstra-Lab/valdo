@@ -90,7 +90,6 @@
 /mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/0107_1.mtz
 /mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/0108_0.mtz
 /mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/0109_1.mtz
-/mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/0110_1.mtz
 /mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/0111_0.mtz
 /mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/0112_0.mtz
 /mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/0113_0.mtz

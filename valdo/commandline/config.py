@@ -59,7 +59,7 @@ STAGE_SCHEMAS = {
         ("stdof",              (int, type(None)), False, None),
         ("include_errors",     bool,        False, True),
         ("random_seed",        int,         False, 42),
-        ("activation",         str,         False, "relu"),
+        ("activation",         str,         False, "tanh"),
     ],
     "reconstruct": [
         ("vae_path",           str,         True,  None),

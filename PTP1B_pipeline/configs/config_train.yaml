@@ -14,4 +14,4 @@ eps: 0.02
 stdof: 128
 include_errors: true
 random_seed: 42
-activation: "relu"
+activation: "tanh"

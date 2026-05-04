@@ -160,6 +160,29 @@ def run_scale(cfg):
             )
         metrics_df = pd.read_pickle(metrics_path)
 
+    # Check for scaled files where the amplitude column is entirely NaN (scaling diverged)
+    import glob as _glob
+    import numpy as np
+    scaled_files = sorted(_glob.glob(os.path.join(cfg["output_folder"], "*.mtz")))
+    amplitude_col = cfg["columns"][0] + "-scaled"
+    all_nan_files = []
+    for sf in scaled_files:
+        try:
+            import gemmi
+            mtz = gemmi.read_mtz_file(sf)
+            col = mtz.column_with_label(amplitude_col)
+            if col is not None:
+                arr = np.array(col)
+                if not np.isfinite(arr).any():
+                    all_nan_files.append(sf)
+        except Exception:
+            pass
+    if all_nan_files:
+        print(f"\nWarning: {len(all_nan_files)} scaled file(s) have all-NaN '{amplitude_col}' "
+              f"(scaling diverged) — exclude these before preprocess:")
+        for f in all_nan_files:
+            print(f"  {f}")
+
     # Plot 1: histogram of end_corr
     fig, ax = plt.subplots()
     ax.hist(metrics_df["end_corr"].to_numpy(), bins=20)
@@ -226,6 +249,14 @@ def run_train(cfg):
     else:
         e = np.zeros_like(y)
 
+    # Drop samples whose entire input row is NaN (failed datasets that slipped through filtering)
+    valid = ~np.isnan(x).all(axis=1)
+    if not valid.all():
+        n_dropped = int((~valid).sum())
+        bad_idx = np.where(~valid)[0].tolist()
+        print(f"Warning: dropping {n_dropped} sample(s) with all-NaN input: indices {bad_idx}")
+        x, y, e = x[valid], y[valid], e[valid]
+
     rng = np.random.default_rng(cfg["random_seed"])
     idx = rng.permutation(x.shape[0])
     n_train = int(x.shape[0] * cfg["train_fraction"])
@@ -252,7 +283,21 @@ def run_train(cfg):
         activation=activation,
         device=device,
     )
+    # Clamp logvar in the encoder output to prevent exp(logvar) overflow in the KL term.
+    # The encoder outputs [z_mean | z_log_var]; we clamp only the logvar half.
+    _dim_z = vae_model.dim_z
+    def _clamp_logvar_hook(module, input, output):
+        return torch.cat([output[:, :_dim_z], output[:, _dim_z:].clamp(-10, 10)], dim=1)
+    vae_model.encoder.register_forward_hook(_clamp_logvar_hook)
+
     optim = torch.optim.Adam(vae_model.parameters(), lr=cfg["learning_rate"])
+    _params = list(vae_model.parameters())
+    _orig_step = optim.step
+    def _clipped_step(*args, **kwargs):
+        torch.nn.utils.clip_grad_norm_(_params, max_norm=1.0)
+        return _orig_step(*args, **kwargs)
+    optim.step = _clipped_step
+
     vae_model.train(
         x_train, y_train, e_train, optim,
         x_val=x_val, y_val=y_val, e_val=e_val,
@@ -533,7 +578,7 @@ eps: 0.02
 stdof: 128                                      # null = Gaussian ELBO; integer = Student-t df (128 recommended)
 include_errors: true
 random_seed: 42
-activation: "relu"
+activation: "tanh"
 """,
     "reconstruct": """\
 # valdo.pipeline reconstruct config

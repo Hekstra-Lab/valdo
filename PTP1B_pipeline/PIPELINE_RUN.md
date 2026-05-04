@@ -71,9 +71,11 @@ Before preprocessing, datasets are filtered using `refine_1nwl/refine_summary.cs
 - Remove datasets with `Rf_final > 0.45` (50 datasets)
 - For the 22 ambiguous datasets, keep only the symop with the lower R-free
 
-The filtered file list (1,651 paths) is saved to `configs/scaled_filtered_files.txt` and used as input to the next stage. The `.txt` file format is supported by all pipeline stages as an alternative to a glob pattern.
+The filtered file list (1,650 paths) is saved to `configs/scaled_filtered_files.txt` and used as input to the next stage. The `.txt` file format is supported by all pipeline stages as an alternative to a glob pattern.
 
-Note: dataset `0003_1.mtz` was initially included (it appeared in `refine_summary.csv`) but `original_data/0003.mtz` does not exist so the corresponding scaled file was never produced. It has been removed from `scaled_filtered_files.txt`.
+Two datasets were removed from the initial filtered list:
+- `0003_1.mtz`: appeared in `refine_summary.csv` but `original_data/0003.mtz` does not exist, so no scaled file was ever produced.
+- `0110_1.mtz`: scaling diverged silently — `F-obs` is fully valid but `F-obs-scaled` is entirely NaN. The `valdo.pipeline scale` command now warns about such files automatically after scaling completes.
 
 ---
 
@@ -84,14 +86,48 @@ Z-score normalizes the structure factor amplitudes to produce VAE input/output a
 
 - **Config:** `configs/config_preprocess.yaml`
 - **Command:** `valdo.pipeline preprocess configs/config_preprocess.yaml`
-- **Input:** `configs/scaled_filtered_files.txt` (1,651 paths)
+- **Input:** `configs/scaled_filtered_files.txt` (1,650 paths)
 - **Output:**
   - `vae/intersection.pkl` — Miller indices common to all datasets (2,283 reflections)
   - `vae/union.pkl` — Miller indices in any dataset (77,821 reflections)
   - `vae/sigF.pkl` — error estimates on the union set
   - `vae/union_mean.pkl`, `vae/union_sd.pkl` — per-reflection mean and SD used for Z-scoring
-  - `vae/vae_input.npy` — shape (1651, 2283), intersection amplitudes (Z-scored)
-  - `vae/vae_output.npy` — shape (1651, 77821), union amplitudes (Z-scored)
-  - `vae/vae_sigF.npy` — shape (1651, 77821), union error estimates (Z-scored)
+  - `vae/vae_input.npy` — shape (1650, 2283), intersection amplitudes (Z-scored)
+  - `vae/vae_output.npy` — shape (1650, 77821), union amplitudes (Z-scored)
+  - `vae/vae_sigF.npy` — shape (1650, 77821), union error estimates (Z-scored)
+
+---
+
+## Step 5: Train VAE
+
+Trains a Variational Autoencoder to reconstruct the full union set of structure factor
+amplitudes from the intersection (complete) subset.
+
+- **Config:** `configs/config_train.yaml`
+- **Command:** `valdo.pipeline train configs/config_train.yaml`
+- **Input:** `vae/vae_input.npy`, `vae/vae_output.npy`, `vae/vae_sigF.npy`
+- **Output:** `vae/trained_vae.pkl` (32 MB), `vae/vae_loss_curves.png`
+
+Key hyperparameters used (matching the pipeline notebook):
+- `latent_dim: 7`, `n_hidden_layers: [3, 6]`, `n_hidden_size: 100`
+- `activation: tanh`, `stdof: 128` (Student-t loss), `include_errors: true`
+- `epochs: 500`, `batch_size: 100`, `learning_rate: 0.001`, `w_kl: 1.0`, `eps: 0.02`
+
+Loss decreased from ~5.1×10⁶ (epoch 1) to ~2.6×10⁶ (epoch 500) with no NaN.
+
+### Debugging notes
+
+Training initially produced NaN in the first step. Two issues were identified and fixed
+in `valdo.pipeline train` (no changes to the core library):
+
+1. **All-NaN input row**: sample index 92 (`0110_1.mtz`) in `vae_input.npy` was entirely NaN —
+   the scaling for this dataset diverged silently, producing all-NaN `F-obs-scaled`. It passed
+   the R-factor filter but should have been excluded before preprocess. The `scale` stage now
+   warns about such files automatically. The `train` runner also guards against this by dropping
+   all-NaN rows before training.
+
+2. **Logvar overflow**: a forward hook was registered on the encoder to clamp the log-variance
+   output to `[-10, 10]`, preventing `exp(logvar)` from overflowing in the KL divergence term.
+   Gradient clipping (`max_norm=1.0`) was also added as an additional safeguard.
 
 ---
