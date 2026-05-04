@@ -133,17 +133,22 @@ def run_scale(cfg):
             columns=cfg["columns"],
             ncpu=cfg["ncpu"],
         )
+        scaler.batch_scaling(
+            mtz_path_list=file_list,
+            outputmtz_path=cfg["output_folder"],
+            prefix=cfg["prefix"],
+        )
     else:
         scaler = Scaler(
             reference_mtz=cfg["reference_mtz"],
             columns=cfg["columns"],
         )
-    scaler.batch_scaling(
-        mtz_path_list=file_list,
-        outputmtz_path=cfg["output_folder"],
-        prefix=cfg["prefix"],
-        when_opt=cfg["when_opt"],
-    )
+        scaler.batch_scaling(
+            mtz_path_list=file_list,
+            outputmtz_path=cfg["output_folder"],
+            prefix=cfg["prefix"],
+            when_opt=cfg["when_opt"],
+        )
 
 
 def run_preprocess(cfg):
