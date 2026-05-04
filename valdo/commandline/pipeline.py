@@ -49,28 +49,78 @@ def run_standardize(cfg):
 
 
 def run_reindex(cfg):
+    import pandas as pd
+    import matplotlib.pyplot as plt
     import valdo.reindex as reindex
-    file_list = expand_glob_field(cfg["input_files"])
+
     os.makedirs(cfg["output_folder"], exist_ok=True)
-    if cfg["ncpu"] > 1:
-        reindex.reindex_files_pool(
-            input_files=file_list,
-            reference_file=cfg["reference_file"],
-            output_folder=cfg["output_folder"],
-            columns=cfg["columns"],
-            wcorr=cfg["wcorr"],
-            cc_min_dif=cfg["cc_min_dif"],
-            ncpu=cfg["ncpu"],
-        )
+    record_path = os.path.join(cfg["output_folder"], "reindex_record.pkl")
+
+    if os.path.isfile(record_path):
+        print(f"Found existing reindex_record.pkl — skipping reindexing, generating plots only.")
+        df_record = pd.read_pickle(record_path)
     else:
-        reindex.reindex_files(
-            input_files=file_list,
-            reference_file=cfg["reference_file"],
-            output_folder=cfg["output_folder"],
-            columns=cfg["columns"],
-            wcorr=cfg["wcorr"],
-            cc_min_dif=cfg["cc_min_dif"],
-        )
+        file_list = expand_glob_field(cfg["input_files"])
+        if cfg["ncpu"] > 1:
+            df_record = reindex.reindex_files_pool(
+                input_files=file_list,
+                reference_file=cfg["reference_file"],
+                output_folder=cfg["output_folder"],
+                columns=cfg["columns"],
+                wcorr=cfg["wcorr"],
+                cc_min_dif=cfg["cc_min_dif"],
+                ncpu=cfg["ncpu"],
+            )
+        else:
+            df_record = reindex.reindex_files(
+                input_files=file_list,
+                reference_file=cfg["reference_file"],
+                output_folder=cfg["output_folder"],
+                columns=cfg["columns"],
+                wcorr=cfg["wcorr"],
+                cc_min_dif=cfg["cc_min_dif"],
+            )
+
+    if df_record is None:
+        print("No indexing ambiguity detected — skipping validation plots.")
+        return
+
+    # Identify CC columns (CC_symop0, CC_symop1, ...)
+    cc_cols = sorted([c for c in df_record.columns if c.startswith("CC_symop")])
+    if len(cc_cols) < 2:
+        print("Only one symop found — skipping validation plots.")
+        return
+
+    cc_dif  = df_record[cc_cols[1]] - df_record[cc_cols[0]]
+    cc_max  = df_record[cc_cols].max(axis=1)
+
+    # Plot 1: histogram of CC difference
+    fig, ax = plt.subplots()
+    ax.hist(cc_dif, bins=100)
+    ax.set_xlabel(f"CC ({cc_cols[1]}) - CC ({cc_cols[0]})")
+    ax.set_ylabel("Count per bin")
+    ax.grid(True)
+    hist_path = os.path.join(cfg["output_folder"], "reindex_cc_diff_histogram.png")
+    fig.savefig(hist_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {hist_path}")
+
+    # Plot 2: scatter of max CC vs CC difference
+    fig, ax = plt.subplots()
+    ax.plot(cc_max, cc_dif, ".", markersize=3, alpha=0.6)
+    ax.set_xlabel("Max CC over symops")
+    ax.set_ylabel(f"CC ({cc_cols[1]}) - CC ({cc_cols[0]})")
+    ax.grid(True)
+    scatter_path = os.path.join(cfg["output_folder"], "reindex_cc_diff_scatter.png")
+    fig.savefig(scatter_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {scatter_path}")
+
+    # Summary of ambiguous datasets
+    ambiguous = df_record[df_record["num_duplicates"] > 1]
+    print(f"\nDatasets with unresolved ambiguity (num_duplicates > 1): {len(ambiguous)}")
+    if len(ambiguous) > 0:
+        print(ambiguous[["file_idx", "best_symop", "num_duplicates"] + cc_cols].to_string(index=False))
 
 
 def run_scale(cfg):
