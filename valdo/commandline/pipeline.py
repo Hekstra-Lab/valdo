@@ -56,8 +56,8 @@ def run_reindex(cfg):
     os.makedirs(cfg["output_folder"], exist_ok=True)
     record_path = os.path.join(cfg["output_folder"], "reindex_record.pkl")
 
-    if os.path.isfile(record_path):
-        print(f"Found existing reindex_record.pkl — skipping reindexing, generating plots only.")
+    if os.path.isfile(record_path) and not cfg.get("_force"):
+        print(f"Found existing reindex_record.pkl — skipping reindexing (use --force to rerun).")
         df_record = pd.read_pickle(record_path)
     else:
         file_list = expand_glob_field(cfg["input_files"])
@@ -124,6 +124,8 @@ def run_reindex(cfg):
 
 
 def run_scale(cfg):
+    import gemmi
+    import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
     from valdo.scaling import Scaler, Scaler_pool
@@ -131,12 +133,15 @@ def run_scale(cfg):
     os.makedirs(cfg["output_folder"], exist_ok=True)
     metrics_path = os.path.join(cfg["output_folder"], cfg["prefix"] + "scaling_metrics.pkl")
 
-    if os.path.isfile(metrics_path):
-        print(f"Found existing scaling_metrics.pkl — skipping scaling, generating plots only.")
+    if os.path.isfile(metrics_path) and not cfg.get("_force"):
+        print(f"Found existing scaling_metrics.pkl — skipping scaling (use --force to rerun).")
         metrics_df = pd.read_pickle(metrics_path)
     else:
         file_list = expand_glob_field(cfg["file_list"])
-        if cfg["ncpu"] > 1:
+        # Scaler_pool does not support numerical optimisation (when_opt).
+        # Fall back to single-process Scaler whenever when_opt is not "never".
+        use_pool = cfg["ncpu"] > 1 and cfg["when_opt"] == "never"
+        if use_pool:
             scaler = Scaler_pool(
                 reference_mtz=cfg["reference_mtz"],
                 columns=cfg["columns"],
@@ -148,6 +153,9 @@ def run_scale(cfg):
                 prefix=cfg["prefix"],
             )
         else:
+            if cfg["ncpu"] > 1 and cfg["when_opt"] != "never":
+                print(f"Note: Scaler_pool does not support when_opt; "
+                      f"using single-process Scaler with when_opt={cfg['when_opt']!r}")
             scaler = Scaler(
                 reference_mtz=cfg["reference_mtz"],
                 columns=cfg["columns"],
@@ -160,21 +168,14 @@ def run_scale(cfg):
             )
         metrics_df = pd.read_pickle(metrics_path)
 
-    # Check for scaled files where the amplitude column is entirely NaN (scaling diverged)
-    import glob as _glob
-    import numpy as np
-    scaled_files = sorted(_glob.glob(os.path.join(cfg["output_folder"], "*.mtz")))
+    # Warn about scaled files where the amplitude column is entirely NaN (scaling diverged)
     amplitude_col = cfg["columns"][0] + "-scaled"
     all_nan_files = []
-    for sf in scaled_files:
+    for sf in sorted(glob.glob(os.path.join(cfg["output_folder"], "*.mtz"))):
         try:
-            import gemmi
-            mtz = gemmi.read_mtz_file(sf)
-            col = mtz.column_with_label(amplitude_col)
-            if col is not None:
-                arr = np.array(col)
-                if not np.isfinite(arr).any():
-                    all_nan_files.append(sf)
+            col = gemmi.read_mtz_file(sf).column_with_label(amplitude_col)
+            if col is not None and not np.isfinite(np.array(col)).any():
+                all_nan_files.append(sf)
         except Exception:
             pass
     if all_nan_files:
@@ -211,6 +212,10 @@ def run_scale(cfg):
 
 def run_preprocess(cfg):
     import valdo.preprocessing as preprocessing
+    sentinel = os.path.join(cfg["output_folder"], cfg["prefix"] + "vae_input.npy")
+    if os.path.isfile(sentinel) and not cfg.get("_force"):
+        print(f"Found existing vae_input.npy — skipping preprocess (use --force to rerun).")
+        return
     file_list = expand_glob_field(cfg["file_list"])
     os.makedirs(cfg["output_folder"], exist_ok=True)
     preprocessing.find_intersection(
@@ -239,8 +244,15 @@ def run_preprocess(cfg):
 def run_train(cfg):
     import numpy as np
     import torch
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
     import valdo
     from valdo.helper import try_gpu
+
+    if os.path.isfile(cfg["output_path"]) and not cfg.get("_force"):
+        print(f"Found existing {cfg['output_path']} — skipping train (use --force to rerun).")
+        return
 
     x = np.load(cfg["vae_input_path"])
     y = np.load(cfg["vae_output_path"])
@@ -257,6 +269,7 @@ def run_train(cfg):
         print(f"Warning: dropping {n_dropped} sample(s) with all-NaN input: indices {bad_idx}")
         x, y, e = x[valid], y[valid], e[valid]
 
+    torch.manual_seed(cfg["random_seed"])
     rng = np.random.default_rng(cfg["random_seed"])
     idx = rng.permutation(x.shape[0])
     n_train = int(x.shape[0] * cfg["train_fraction"])
@@ -313,9 +326,6 @@ def run_train(cfg):
         os.makedirs(output_dir, exist_ok=True)
     vae_model.save(cfg["output_path"])
 
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
     loss_array = np.array(vae_model.loss_train)
     plot_dir = output_dir or "."
     fig, axs = plt.subplots(3, 1, figsize=(6, 8))
@@ -341,6 +351,14 @@ def run_reconstruct(cfg):
     import torch
     import valdo
 
+    # output_path is saved as .npy; np.save appends .npy if not already present
+    out_path = cfg["output_path"]
+    if not out_path.endswith(".npy"):
+        out_path += ".npy"
+    if os.path.isfile(out_path) and not cfg.get("_force"):
+        print(f"Found existing {out_path} — skipping reconstruct (use --force to rerun).")
+        return
+
     vae_model = valdo.VAE.load(cfg["vae_path"])
     x = np.load(cfg["vae_input_path"])
     input_tensor = torch.tensor(x, dtype=torch.float32).to(vae_model.device)
@@ -365,6 +383,10 @@ def run_reconstruct(cfg):
 
 def run_rescale(cfg):
     import valdo.preprocessing as preprocessing
+    existing = glob.glob(os.path.join(cfg["output_folder"], "*.mtz"))
+    if existing and not cfg.get("_force"):
+        print(f"Found {len(existing)} existing MTZ(s) in output_folder — skipping rescale (use --force to rerun).")
+        return
     file_list = expand_glob_field(cfg["input_files"])
     os.makedirs(cfg["output_folder"], exist_ok=True)
     kwargs = dict(
@@ -383,8 +405,15 @@ def run_rescale(cfg):
 
 
 def run_add_phases_and_blobs(cfg):
+    import numpy as np
+    import reciprocalspaceship as rs
     import valdo.helper as helper
     import valdo.blobs as blobs
+
+    sentinel = os.path.join(cfg["blob_output_folder"], cfg["prefix"] + "blob_stats.pkl")
+    if os.path.isfile(sentinel) and not cfg.get("_force"):
+        print(f"Found existing blob_stats.pkl — skipping add_phases_and_blobs (use --force to rerun).")
+        return
 
     file_list = expand_glob_field(cfg["file_list"])
     os.makedirs(cfg["output_folder"], exist_ok=True)
@@ -431,6 +460,15 @@ def run_add_phases_and_blobs(cfg):
         ncpu=cfg["ncpu"],
     )
 
+    # Step 3b: drop NaN rows produced by extrapolation (mirrors pipeline_doeke.py)
+    for f in phased_files:
+        try:
+            ds = rs.read_mtz(f)
+            if np.count_nonzero(ds.isnull()) > 0:
+                ds.dropna().write_mtz(f)
+        except Exception as e:
+            print(f"Warning: NaN cleanup failed for {f}: {e}", file=sys.stderr)
+
     # Step 4: detect blobs
     blob_kwargs = dict(
         input_files=phased_files,
@@ -449,9 +487,16 @@ def run_add_phases_and_blobs(cfg):
 
 
 def run_tag_blobs(cfg):
+    import re
+    import shutil
     import tempfile
     import pandas as pd
     import valdo.tag as tag
+
+    sentinel = os.path.join(cfg["output_folder"], "filtered_blob_stats_tagged.pkl")
+    if os.path.isfile(sentinel) and not cfg.get("_force"):
+        print(f"Found existing filtered_blob_stats_tagged.pkl — skipping tag_blobs (use --force to rerun).")
+        return
 
     blob_df = pd.read_pickle(cfg["blob_stats_path"])
 
@@ -468,8 +513,6 @@ def run_tag_blobs(cfg):
     # Optionally tag ligand-containing blobs using known bound structures.
     # If bound_models_folder is not provided, skip this step (bound=0, ligand=0 for all).
     if cfg.get("bound_models_folder"):
-        import re
-        import tempfile
         # bound_models_folder contains flat PDB files named like y0049_og_superposed.pdb.
         # Extract the numeric ID (strip leading alpha prefix).
         bound_models_folder = cfg["bound_models_folder"].rstrip("/") + "/"
@@ -494,7 +537,6 @@ def run_tag_blobs(cfg):
                 os.symlink(src, os.path.join(tmp_dir, f"{num}.pdb"))
             blob_df = tag.tag_lig_blobs(blob_df, tmp_dir + "/", ncpu=cfg["ncpu"])
         finally:
-            import shutil
             shutil.rmtree(tmp_dir, ignore_errors=True)
     else:
         blob_df["bound"] = 0
@@ -577,7 +619,7 @@ columns:
   - "SIGF-obs"
 output_folder: "/path/to/scaled/"
 prefix: ""                                      # prefix for the scaling_metrics.pkl filename only
-when_opt: 0.2                                   # "all", "never", or float threshold [0.0, 1.0]
+when_opt: "all"                                 # "all", "never", or float threshold [0.0, 1.0]
 ncpu: 1
 """,
     "preprocess": """\
@@ -615,8 +657,8 @@ w_kl: 1.0
 eps: 0.02
 stdof: 128                                      # null = Gaussian ELBO; integer = Student-t df (128 recommended)
 include_errors: true
-random_seed: 42
-activation: "tanh"
+random_seed: 11231
+activation: "relu"
 """,
     "reconstruct": """\
 # valdo.pipeline reconstruct config
@@ -721,6 +763,12 @@ class _ArgumentParser(argparse.ArgumentParser):
             type=str,
             help="Path to YAML/JSON config file (or stage name when using 'init').",
         )
+        self.add_argument(
+            "--force",
+            action="store_true",
+            default=False,
+            help="Force rerun even if output files already exist.",
+        )
 
 
 def main():
@@ -737,4 +785,5 @@ def main():
 
     cfg = load_config(args.config)
     cfg = validate_config(args.stage, cfg)
+    cfg["_force"] = args.force
     STAGE_REGISTRY[args.stage](cfg)

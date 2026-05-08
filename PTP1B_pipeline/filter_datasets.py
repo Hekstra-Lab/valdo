@@ -34,7 +34,7 @@ def main():
     parser.add_argument("--metrics",        default=None,
                         help="Path to scaling_metrics.pkl; auto-detected if omitted")
     parser.add_argument("--max-rfree",      type=float, default=0.45)
-    parser.add_argument("--min-cc",         type=float, default=0.0)
+    parser.add_argument("--min-cc",         type=float, default=0.55)
     parser.add_argument("--output",         default="configs/scaled_filtered_files.txt")
     args = parser.parse_args()
 

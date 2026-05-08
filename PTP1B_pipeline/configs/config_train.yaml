@@ -13,5 +13,5 @@ w_kl: 1.0
 eps: 0.02
 stdof: 128
 include_errors: true
-random_seed: 42
-activation: "tanh"
+random_seed: 11231
+activation: "relu"
