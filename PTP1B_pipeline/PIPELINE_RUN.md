@@ -7,7 +7,7 @@ to configure, what output to expect, and notes on common pitfalls.
 
 **Dataset:** 1,679 MTZ files from a PTP1B fragment screen  
 **Reference structure:** 1NWL (apo form)  
-**Final result:** AUC = 0.94 on 8,316 filtered blobs (78 positive ligand blobs)
+**Final result:** AUC = 0.9748 (all blobs); best AUC = 0.9773 at top-5,000 blobs by peakz
 
 ---
 
@@ -28,7 +28,8 @@ Before starting, you need:
 |-----------|----------|
 | `original_data/` | 1,679 raw MTZ files, standardized to `####.mtz` naming |
 | `refine_1nwl/refine_output/` | PHENIX-refined per-dataset PDB and MTZ files (phases) |
-| `bound_models/all_superposed_clean_new-hits-removed/` | 142 known bound-state PDB files (optional, for evaluation only) |
+| `all_superposed_v2/` | 167 known bound-state PDB files as deposited (long filenames) |
+| `bound_models_standardized/` | Same 167 files renamed to `{id}.pdb` — required format for tag_blobs |
 | `configs/` | YAML config files for each pipeline stage |
 | `vae/` | All VAE intermediate files and outputs |
 
@@ -151,37 +152,45 @@ python parse_refine_logs.py refine_1nwl/refine_output/ refine_1nwl/refine_summar
 This produces `refine_summary.csv` with columns `file_idx`, `symop`, `Rw_start`,
 `Rf_start`, `Rw_final`, `Rf_final`, `time(s)`.
 
-### Post-scaling filtering
-
-This is a **manual step** before preprocessing. Use `filter_datasets.py` to remove
-poor-quality datasets, resolve reindexing ambiguity, and write a filtered file list:
-
-```bash
-python filter_datasets.py \
-  --refine-summary refine_1nwl/refine_summary.csv \
-  --reindex-record reindexed/reindex_record.pkl \
-  --scaled-dir     scaled/ \
-  --max-rfree      0.45 \
-  --output         configs/scaled_filtered_files.txt
-```
-
-Pass `--min-cc 0.55` to additionally remove datasets whose post-scaling correlation
-with the reference falls below 0.55.
-
-All subsequent pipeline stages accept a `.txt` file list as `input_files` / `file_list`,
-as an alternative to a glob pattern.
-
-**This run:** 1,650 paths after filtering (50 removed for `Rf_final > 0.45`, 22 symop
-duplicates resolved, 2 additional files removed automatically):
-- `0003_1.mtz` — `original_data/0003.mtz` never existed so no scaled file was produced;
-  `filter_datasets.py` only picks up files present on disk.
-- `0110_1.mtz` — scaling diverged silently: `F-obs-scaled` is entirely NaN despite a
-  valid R-free (0.22). `filter_datasets.py` detects and drops all-NaN scaled files
-  automatically.
+Then run the filter stage (Step 4) to build the dataset list for preprocessing.
 
 ---
 
-## Step 4: Preprocess
+## Step 4: Filter
+
+**What it does:** Removes poor-quality datasets from the scaled pool and writes a clean
+file list for all downstream stages. Four filters are applied in order:
+
+1. **Symop ambiguity resolution** — for datasets flagged as ambiguous by reindex, keeps
+   only the symop variant with the lower R-free.
+2. **R-free cutoff** — drops datasets with `Rf_final > max_rfree`.
+3. **All-NaN amplitude check** — drops files where `F-obs-scaled` is entirely NaN
+   (scaling diverged silently).
+4. **Post-scaling CC cutoff** — drops datasets whose correlation with the reference
+   after scaling falls below `min_cc`.
+
+```bash
+valdo.pipeline filter configs/config_filter.yaml
+```
+
+- **Config:** `configs/config_filter.yaml`
+- **Input:** `refine_1nwl/refine_summary.csv`, `reindexed/reindex_record.pkl`, `scaled/`
+- **Output:** `configs/scaled_filtered_files.txt` — file list consumed by all downstream stages
+
+All subsequent pipeline stages accept this `.txt` file as `input_files` / `file_list`.
+
+**This run:** 1,620 datasets written (from 1,702 scaled):
+- 22 worse-symop duplicates dropped (ambiguity resolution)
+- 50 dropped for `Rf_final > 0.45`
+- 1 dropped for all-NaN `F-obs-scaled` (`0110_1.mtz` — scaling diverged silently)
+- 30 dropped for post-scaling CC < 0.55
+
+> `0003_1.mtz` was never produced by scaling (`original_data/0003.mtz` never existed),
+> so it never appears in the pool — no explicit removal needed.
+
+---
+
+## Step 5: Preprocess
 
 **What it does:** Finds the intersection (reflections present in every dataset) and union
 (reflections present in any dataset) of Miller indices, then Z-score normalizes the
@@ -193,19 +202,19 @@ valdo.pipeline preprocess configs/config_preprocess.yaml
 ```
 
 - **Config:** `configs/config_preprocess.yaml`
-- **Input:** `configs/scaled_filtered_files.txt` (1,650 paths)
+- **Input:** `configs/scaled_filtered_files.txt` (1,620 paths)
 - **Output:**
-  - `vae/intersection.pkl` — Miller indices common to all datasets (2,283 reflections)
+  - `vae/intersection.pkl` — Miller indices common to all datasets (2,775 reflections)
   - `vae/union.pkl` — Miller indices present in any dataset (77,821 reflections)
   - `vae/sigF.pkl` — error estimates on the union set
   - `vae/union_mean.pkl`, `vae/union_sd.pkl` — per-reflection mean and SD for Z-scoring
-  - `vae/vae_input.npy` — shape (1650, 2283), Z-scored intersection amplitudes
-  - `vae/vae_output.npy` — shape (1650, 77821), Z-scored union amplitudes
-  - `vae/vae_sigF.npy` — shape (1650, 77821), Z-scored union error estimates
+  - `vae/vae_input.npy` — shape (1620, 2775), Z-scored intersection amplitudes
+  - `vae/vae_output.npy` — shape (1620, 77821), Z-scored union amplitudes
+  - `vae/vae_sigF.npy` — shape (1620, 77821), Z-scored union error estimates
 
 ---
 
-## Step 5: Train VAE
+## Step 6: Train VAE
 
 **What it does:** Trains a Variational Autoencoder (VAE) to reconstruct the full union set
 of structure factor amplitudes from the smaller intersection subset. The VAE learns a
@@ -227,7 +236,7 @@ valdo.pipeline train configs/config_train.yaml
 | `latent_dim` | 7 | Dimensionality of latent space |
 | `n_hidden_layers` | [3, 6] | Encoder / decoder depth |
 | `n_hidden_size` | 100 | Units per hidden layer |
-| `activation` | tanh | |
+| `activation` | relu | |
 | `stdof` | 128 | Student-t degrees of freedom for the loss; `null` = Gaussian |
 | `include_errors` | true | Weights loss by experimental σ(F) |
 | `epochs` | 500 | |
@@ -236,17 +245,17 @@ valdo.pipeline train configs/config_train.yaml
 | `w_kl` | 1.0 | KL divergence weight |
 | `eps` | 0.02 | Noise floor added to σ(F) |
 
-Loss decreased from ~5.1×10⁶ (epoch 1) to ~2.6×10⁶ (epoch 500) with no NaN.
+**This run:** Loss decreased from ~3.8×10⁶ (epoch 1) to ~2.15×10⁶ (epoch 500) with no NaN.
+Loss curves saved to `vae/vae_loss_curves.png`.
 
 ### Troubleshooting: NaN loss
 
 If training produces NaN loss, two root causes are most likely:
 
 1. **All-NaN input row** — one or more datasets in `vae_input.npy` are entirely NaN
-   because scaling diverged for that dataset. `filter_datasets.py` catches these
-   automatically (Step 3), so this should not occur if you used it to build your file
-   list. As an extra safeguard, the `train` runner also drops any remaining all-NaN
-   rows and warns you.
+   because scaling diverged for that dataset. The `filter` stage (Step 4) catches these
+   automatically, so this should not occur if you ran it. As an extra safeguard, the
+   `train` runner also drops any remaining all-NaN rows and warns you.
 
 2. **Logvar overflow** — the encoder log-variance output becomes very large, causing
    `exp(logvar)` to overflow in the KL term. The `train` runner guards against this by
@@ -256,9 +265,9 @@ If training produces NaN loss, two root causes are most likely:
 
 ---
 
-## Step 6: Reconstruct
+## Step 7: Reconstruct
 
-**What it does:** Passes all 1,650 inputs through the trained VAE to produce MAP-estimated
+**What it does:** Passes all 1,620 inputs through the trained VAE to produce MAP-estimated
 reconstructed structure factor amplitudes for the full union set.
 
 ```bash
@@ -267,16 +276,16 @@ valdo.pipeline reconstruct configs/config_reconstruct.yaml
 
 - **Config:** `configs/config_reconstruct.yaml`
 - **Input:** `vae/trained_vae.pkl`, `vae/vae_input.npy`
-- **Output:** `vae/recons/recons.npy` — shape (1650, 77821), all finite, range [−9.0, 9.3]σ
+- **Output:** `vae/recons/recons.npy` — shape (1620, 77821)
 
 > `ml_recon: true` uses the MAP (maximum a posteriori) reconstruction rather than a
 > stochastic sample. Set `repeats > 1` to estimate reconstruction uncertainty.
 
 ---
 
-## Step 7: Rescale
+## Step 8: Rescale
 
-**What it does:** Reverses the Z-score normalization applied in Step 4 to recover
+**What it does:** Reverses the Z-score normalization applied in Step 5 to recover
 original-scale amplitudes, and computes two new per-dataset columns:
 - `recons` — VAE-reconstructed amplitude in the original scale
 - `diff` — difference between the observed and reconstructed amplitude
@@ -287,11 +296,22 @@ valdo.pipeline rescale configs/config_rescale.yaml
 
 - **Config:** `configs/config_rescale.yaml`
 - **Input:** `vae/recons/recons.npy`, `vae/intersection.pkl`, `vae/union.pkl`, `configs/scaled_filtered_files.txt`
-- **Output:** `vae/recons/####_{symop}.mtz` — 1,650 MTZ files with `recons` and `diff` columns added
+- **Output:** `vae/recons/####_{symop}.mtz` — 1,620 MTZ files with `recons` and `diff` columns added
+
+> **Rerunning the pipeline?** If you previously ran rescale with a different filtered set,
+> old MTZ files from excluded datasets will remain in `vae/recons/`. The next step
+> (`add_phases_and_blobs`) globs this folder and will pick them up. Before rerunning,
+> delete any files not present in your current `scaled_filtered_files.txt`:
+> ```bash
+> # Find and remove stale files
+> comm -23 <(ls vae/recons/*.mtz | xargs -n1 basename | sort) \
+>           <(cat configs/scaled_filtered_files.txt | xargs -n1 basename | sort) \
+>   | xargs -I{} rm vae/recons/{}
+> ```
 
 ---
 
-## Step 8: Add Phases and Blobs
+## Step 9: Add Phases and Blobs
 
 **What it does:** For each reconstructed dataset, this step:
 1. Transfers phases from the corresponding PHENIX-refined MTZ in `refine_output/`
@@ -307,18 +327,25 @@ valdo.pipeline add_phases_and_blobs configs/config_add_phases_and_blobs.yaml
 ```
 
 - **Config:** `configs/config_add_phases_and_blobs.yaml`
-- **Input:** `vae/recons/*.mtz` (1,650 files), `refine_1nwl/refine_output/`
+- **Input:** `vae/recons/*.mtz` (1,620 files), `refine_1nwl/refine_output/`
 - **Output:**
   - `vae/recons_phased/####_{symop}.mtz` — phased MTZ files with `WT`, `WDF`, `ESF_2`, `ESF_4`, `ESF_6`, `ESF_8`, `ESF_16` columns
-  - `vae/blobs/blob_stats.pkl` — 9,318 blobs (columns: `sample`, `peakz`, `peak`, `score`, `cenx`, `ceny`, `cenz`, `volume`, `radius`)
+  - `vae/blobs/blob_stats.pkl` — blob detections (columns: `sample`, `peakz`, `peak`, `score`, `cenx`, `ceny`, `cenz`, `volume`, `radius`)
 
-> **Why 802 phased files instead of 1,650?** Each dataset is matched to a phase file by
+**This run:** 787 of 1,620 datasets were matched to a phase file and processed. 8,050 blobs detected.
+
+> **Why fewer phased files than input?** Each dataset is matched to a phase file by
 > sample ID. Datasets whose refinement failed or was not run will not have a phase file
 > and are silently skipped. Check `refine_output/` coverage if you expect more output.
 
+> **Rerunning?** The step re-globs `vae/recons_phased/` for blob generation. If stale phased
+> files from a previous run remain there (for datasets no longer in your input), blobs will
+> be generated from them too. After cleaning `vae/recons/` (see Step 8 note), also remove
+> the corresponding stale files from `vae/recons_phased/`.
+
 ---
 
-## Step 9: Tag Blobs
+## Step 10: Tag Blobs
 
 **What it does:** Annotates each blob with contextual labels used for filtering and
 evaluation:
@@ -341,13 +368,29 @@ valdo.pipeline tag_blobs configs/config_tag_blobs.yaml
   - `vae/blobs/blob_stats.pkl`
   - `refine_1nwl/refine_output/` — per-dataset PDB files for residue proximity search
   - `vae/recons_phased/` — phased MTZ files for fractional coordinate computation
-  - `bound_models/all_superposed_clean_new-hits-removed/` — known bound-state PDB files *(optional)*
+  - `bound_models_standardized/` — known bound-state PDB files *(optional, for evaluation)*
 - **Output:**
-  - `vae/blobs/blob_stats_tagged.pkl` — 9,318 blobs with all annotation columns added
-  - `vae/blobs/filtered_blob_stats_tagged.pkl` — 8,316 blobs passing `cys215 == 0` and `duplicate == 0`
+  - `vae/blobs/blob_stats_tagged.pkl` — 8,050 blobs with all annotation columns added
+  - `vae/blobs/filtered_blob_stats_tagged.pkl` — 7,072 blobs passing `cys215 == 0` and `duplicate == 0`
 
-**This run:** 624 blobs (from 141 known-bound datasets) were flagged as `bound`. After
-excluding active-site and duplicate blobs, 8,316 blobs remain for evaluation.
+**This run:** 515 blobs from 167 known-bound datasets were flagged as `bound`; 96 blobs
+overlap known ligand atoms (`ligand == 1`). After excluding active-site and duplicate blobs,
+7,072 blobs remain for evaluation.
+
+> **Bound model naming requirement:** `tag_lig_blobs` looks up PDB files by sample ID using
+> the pattern `{sample_id}.pdb` (e.g. `0049.pdb`). Your bound model PDB files **must** be
+> named this way. If they have longer names (e.g. `PTP1B_y0049_bound_state_reindexed.pdb_fitted.pdb`),
+> create a standardized copy first:
+> ```python
+> import os, re, shutil
+> src, dst = "all_superposed_v2/", "bound_models_standardized/"
+> os.makedirs(dst, exist_ok=True)
+> for fn in os.listdir(src):
+>     m = re.match(r".*(\d{4}).*.pdb", fn)
+>     if m:
+>         shutil.copy(os.path.join(src, fn), os.path.join(dst, m.group(1) + ".pdb"))
+> ```
+> Then point `bound_models_folder` at the standardized directory.
 
 > **No known bound structures?** Omit `bound_models_folder` from the config. The `ligand`
 > and `bound` columns will be set to 0 for all blobs and the ligand-tagging step is
@@ -357,7 +400,7 @@ Key parameters: `focal_seqid: 215`, `focal_radius: 5.0 Å`, `focal_tag_name: cys
 
 ---
 
-## Step 10: Evaluate (AUC)
+## Step 11: Evaluate (AUC)
 
 If you have known bound structures, evaluate hit-calling performance with the provided
 script:
@@ -366,10 +409,20 @@ script:
 python plot_auc.py vae/blobs/filtered_blob_stats_tagged.pkl
 ```
 
-This plots the ROC curve using blob `score` as the ranking metric and saves
-`roc_curve.png` next to the input file.
+This produces two plots:
 
-**This run:** AUC = **0.9399** (78 positive blobs, 8,238 negative blobs).
+- **`roc_curve.png`** — ROC curve for all blobs using `score` as the ranking metric
+- **`auc_vs_nblobs.png`** — AUC as a function of the number of top blobs kept (sorted by
+  `peakz` descending), evaluated at N = 500, 1000, 2000, …, 6000. The optimal N and its
+  AUC are annotated.
+
+**This run:** AUC = **0.9748** (96 positive blobs, 6,976 negative blobs from 787 datasets).
+Best AUC = **0.9773** at the top **5,000** blobs by `peakz`.
+
+> **`score` vs `peakz`:** The ROC curve and per-subset AUC are both computed using `score`
+> (integrated blob intensity) as the classifier. The subsets are selected by `peakz` (peak
+> sigma value) because it is a more stable ranking metric across datasets. This matches the
+> approach in the published pipeline notebook.
 
 > The `score` column is the integrated blob intensity above the contour threshold,
 > computed by gemmi's flood-fill. Higher score = larger / stronger blob = more likely

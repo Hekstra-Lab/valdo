@@ -3,6 +3,7 @@ dev/
 scaled_mtzs/
 *pkl
 PTP1B_pipeline/
+CLAUDE.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

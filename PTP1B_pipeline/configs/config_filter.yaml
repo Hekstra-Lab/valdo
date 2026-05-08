@@ -1,0 +1,7 @@
+refine_summary: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/refine_1nwl/refine_summary.csv"
+reindex_record: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/reindexed/reindex_record.pkl"
+scaled_dir: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/scaled/"
+metrics: null
+max_rfree: 0.45
+min_cc: 0.55
+output: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/configs/scaled_filtered_files.txt"
