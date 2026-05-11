@@ -5,9 +5,10 @@ Compute VAE map quality metrics for the PTP1B VALDO pipeline:
   2. Heavy atom metric — WDF map value at ligand heavy atom (Cl/Br/S/I) positions
 
 Run from PTP1B_pipeline/:
-    python compute_valdo_metrics.py
+    python compute_valdo_metrics.py [--recons-phased PATH]
 """
 
+import argparse
 import os
 import re
 import glob
@@ -19,7 +20,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RECONS_PHASED           = os.path.join(SCRIPT_DIR, "vae", "recons_phased")
 BOUND_MODELS_STD        = os.path.join(SCRIPT_DIR, "bound_models_standardized")
 ALL_SUPERPOSED_V2       = os.path.join(SCRIPT_DIR, "all_superposed_v2")
-MAPPING_TXT             = os.path.join(SCRIPT_DIR, "..", "notebooks", "ligand_cif_to_dataset_mapping.txt")
+MAPPING_TXT             = os.path.join(SCRIPT_DIR, "ligand_cif_to_dataset_mapping.txt")
 
 DIFF_COL  = "WDF"
 PHASE_COL = "PH2FOFCWT"
@@ -129,10 +130,77 @@ def report_ha(results):
     print(f"  Mean WDF peak : {np.mean(vals):.4f}  Std : {np.std(vals):.4f}")
 
 
-def main():
+def compute_metrics(recons_phased_dir):
+    """
+    Compute apo peak and heavy atom peak metrics for a given recons_phased directory.
+    Returns a dict with keys: n_apo, apo_mean, apo_std,
+                               n_keedy, keedy_mean, n_ginn, ginn_mean, n_all, all_mean.
+    """
     apo_ids = load_apo_ids(MAPPING_TXT)
     keedy_ids, ginn_ids = classify_bound_models(ALL_SUPERPOSED_V2)
-    all_mtz = sorted(glob.glob(os.path.join(RECONS_PHASED, "*.mtz")))
+    all_mtz = sorted(glob.glob(os.path.join(recons_phased_dir, "*.mtz")))
+
+    # ── Metric 1: Apo peak ──────────────────────────────────────────────────
+    apo_peaks = []
+    for mtz_path in tqdm(all_mtz, desc="Apo peak", leave=False):
+        did = extract_id_from_mtz(mtz_path)
+        if did is None or did not in apo_ids:
+            continue
+        try:
+            grid = wdf_grid(mtz_path)
+            apo_peaks.append(float(np.max(grid.array)))
+        except Exception:
+            pass
+
+    # ── Metric 2: Heavy atom peak ────────────────────────────────────────────
+    all_pdb = sorted(glob.glob(os.path.join(BOUND_MODELS_STD, "*.pdb")))
+    ha_all = []
+
+    for pdb_path in tqdm(all_pdb, desc="Heavy atom peak", leave=False):
+        did = extract_id_from_pdb(pdb_path)
+        if did is None:
+            continue
+        mtz_path = find_mtz(did, recons_phased_dir)
+        if mtz_path is None:
+            continue
+        try:
+            grid = wdf_grid(mtz_path)
+            val = heavy_atom_peak(grid, pdb_path)
+            if val is not None:
+                ha_all.append((did, val))
+        except Exception:
+            pass
+
+    ha_keedy = [(did, v) for did, v in ha_all if did in keedy_ids]
+    ha_ginn  = [(did, v) for did, v in ha_all if did in ginn_ids]
+
+    def safe_mean(pairs):
+        vals = [v for _, v in pairs]
+        return float(np.mean(vals)) if vals else float("nan")
+
+    return dict(
+        n_apo      = len(apo_peaks),
+        apo_mean   = float(np.mean(apo_peaks)) if apo_peaks else float("nan"),
+        apo_std    = float(np.std(apo_peaks))  if apo_peaks else float("nan"),
+        n_keedy    = len(ha_keedy),
+        keedy_mean = safe_mean(ha_keedy),
+        n_ginn     = len(ha_ginn),
+        ginn_mean  = safe_mean(ha_ginn),
+        n_all      = len(ha_all),
+        all_mean   = safe_mean(ha_all),
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Compute VALDO map quality metrics.")
+    parser.add_argument("--recons-phased", default=RECONS_PHASED,
+                        help="Path to recons_phased directory (default: vae/recons_phased/)")
+    args = parser.parse_args()
+
+    print(f"Phased MTZ dir: {args.recons_phased}")
+    apo_ids = load_apo_ids(MAPPING_TXT)
+    keedy_ids, ginn_ids = classify_bound_models(ALL_SUPERPOSED_V2)
+    all_mtz = sorted(glob.glob(os.path.join(args.recons_phased, "*.mtz")))
 
     # ── Metric 1: Apo peak ──────────────────────────────────────────────────
     print("=== APO PEAK METRIC ===")
@@ -160,7 +228,7 @@ def main():
     # ── Metric 2: Heavy atom peak ────────────────────────────────────────────
     print("\n=== HEAVY ATOM PEAK METRIC ===")
     all_pdb = sorted(glob.glob(os.path.join(BOUND_MODELS_STD, "*.pdb")))
-    ha_all     = []   # (did, peak) — all bound models
+    ha_all     = []
     ha_no_heavy = []
     ha_missing  = []
 
@@ -168,7 +236,7 @@ def main():
         did = extract_id_from_pdb(pdb_path)
         if did is None:
             continue
-        mtz_path = find_mtz(did, RECONS_PHASED)
+        mtz_path = find_mtz(did, args.recons_phased)
         if mtz_path is None:
             ha_missing.append(did)
             continue
