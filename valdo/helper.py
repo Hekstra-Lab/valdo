@@ -291,7 +291,9 @@ def find_phase_file(file, apo_mtzs_path, parser=None):
             handler=2
         else:
             try:
-                mtz=glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz"))[0]
+                matches = sorted(glob.glob(os.path.join(apo_mtzs_path, f"*{os.path.splitext(os.path.basename(file))[0]}*.mtz")))
+                refined = [m for m in matches if m.endswith("_001.mtz")]
+                mtz = refined[0] if refined else matches[0]
                 if os.path.isfile(mtz):
                     handler=3
             except:

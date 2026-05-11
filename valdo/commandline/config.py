@@ -31,6 +31,15 @@ STAGE_SCHEMAS = {
         ("when_opt",           (str, float, int), False, 0.2),
         ("ncpu",               int,         False, 1),
     ],
+    "filter": [
+        ("refine_summary",  str,              True,  None),
+        ("reindex_record",  (str, type(None)), False, None),
+        ("scaled_dir",      str,              True,  None),
+        ("metrics",         (str, type(None)), False, None),
+        ("max_rfree",       float,            False, 0.45),
+        ("min_cc",          float,            False, 0.55),
+        ("output",          str,              True,  None),
+    ],
     "preprocess": [
         ("file_list",          (str, list), True,  None),
         ("output_folder",      str,         True,  None),

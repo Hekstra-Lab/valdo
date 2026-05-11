@@ -11,6 +11,7 @@ Available stages
     standardize          Rename and copy raw MTZ files to a standard naming scheme
     reindex              Correct indexing ambiguity if present (optional)
     scale                Anisotropically scale all datasets to a reference
+    filter               Filter scaled datasets by R-free and post-scaling CC; write file list
     preprocess           Build VAE input/output arrays (intersection, union, Z-score)
     train                Train the VAE model
     reconstruct          Run VAE reconstruction on all samples
@@ -208,6 +209,91 @@ def run_scale(cfg):
     fig.savefig(scatter_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {scatter_path}")
+
+
+def run_filter(cfg):
+    import gemmi
+    import numpy as np
+    import pandas as pd
+
+    out_path = cfg["output"]
+    if os.path.isfile(out_path) and not cfg.get("_force"):
+        print(f"Found existing {out_path} — skipping filter (use --force to rerun).")
+        return
+
+    # --- Load refinement summary ---
+    df = pd.read_csv(cfg["refine_summary"])
+    df["file_idx"] = df["file_idx"].astype(str).str.zfill(4)
+    df["symop"]    = df["symop"].astype(str)
+
+    drop = set()
+
+    # --- Resolve reindexing ambiguity: drop the worse symop for ambiguous datasets ---
+    if cfg["reindex_record"] and os.path.isfile(cfg["reindex_record"]):
+        import pickle
+        with open(cfg["reindex_record"], "rb") as f:
+            reindex_record = pickle.load(f)
+        if reindex_record is not None:
+            ambiguous = reindex_record[reindex_record["num_duplicates"] > 1]["file_idx"].tolist()
+            ambiguous = [str(x).zfill(4) for x in ambiguous]
+            df_ambig  = df[df["file_idx"].isin(ambiguous)]
+            worse     = df_ambig.loc[df_ambig.groupby("file_idx")["Rf_final"].idxmax()]
+            drop1     = set((worse["file_idx"] + "_" + worse["symop"] + ".mtz").tolist())
+            print(f"Dropping {len(drop1)} worse-symop duplicates from {len(ambiguous)} ambiguous datasets")
+            drop |= drop1
+    else:
+        print("No reindex_record found; skipping ambiguity resolution")
+
+    # --- Filter by R-free ---
+    bad_R = df[df["Rf_final"] > cfg["max_rfree"]]
+    drop2 = set((bad_R["file_idx"] + "_" + bad_R["symop"] + ".mtz").tolist())
+    print(f"Dropping {len(drop2)} datasets with Rf_final > {cfg['max_rfree']}")
+    drop |= drop2
+
+    # --- Collect scaled files ---
+    all_scaled = sorted(glob.glob(os.path.join(cfg["scaled_dir"], "*.mtz")))
+    if not all_scaled:
+        print(f"Error: no MTZ files found in {cfg['scaled_dir']}", file=sys.stderr)
+        sys.exit(1)
+    file_list = [f for f in all_scaled if os.path.basename(f) not in drop]
+
+    # --- Drop files where F-obs-scaled is entirely NaN (scaling diverged) ---
+    nan_files = []
+    for mtz_path in file_list:
+        try:
+            col = gemmi.read_mtz_file(mtz_path).column_with_label("F-obs-scaled")
+            if col is not None and not np.isfinite(np.array(col)).any():
+                nan_files.append(mtz_path)
+        except Exception:
+            pass
+    if nan_files:
+        print(f"Dropping {len(nan_files)} file(s) with all-NaN F-obs-scaled: "
+              + ", ".join(os.path.basename(f) for f in nan_files))
+        file_list = [f for f in file_list if f not in nan_files]
+
+    # --- Filter by post-scaling CC ---
+    if cfg["min_cc"] > 0.0:
+        metrics_path = cfg["metrics"]
+        if not metrics_path:
+            candidates = glob.glob(os.path.join(cfg["scaled_dir"], "*scaling_metrics.pkl"))
+            metrics_path = candidates[0] if candidates else None
+        if metrics_path and os.path.isfile(metrics_path):
+            metrics = pd.read_pickle(metrics_path)
+            low_cc  = set(metrics[(metrics["end_corr"] < cfg["min_cc"]) |
+                                   metrics["end_corr"].isnull()]["file"].tolist())
+            before  = len(file_list)
+            file_list = [f for f in file_list
+                         if os.path.basename(f).replace(".mtz", "") not in low_cc]
+            print(f"Dropping {before - len(file_list)} datasets with post-scaling CC < {cfg['min_cc']}")
+        else:
+            print("Warning: min_cc set but no scaling_metrics.pkl found; skipping CC filter",
+                  file=sys.stderr)
+
+    # --- Write output ---
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "w") as f:
+        f.write("\n".join(file_list) + "\n")
+    print(f"\n{len(file_list)} datasets written to {out_path}")
 
 
 def run_preprocess(cfg):
@@ -563,6 +649,7 @@ STAGE_REGISTRY = {
     "standardize":          run_standardize,
     "reindex":              run_reindex,
     "scale":                run_scale,
+    "filter":               run_filter,
     "preprocess":           run_preprocess,
     "train":                run_train,
     "reconstruct":          run_reconstruct,
@@ -621,6 +708,18 @@ output_folder: "/path/to/scaled/"
 prefix: ""                                      # prefix for the scaling_metrics.pkl filename only
 when_opt: "all"                                 # "all", "never", or float threshold [0.0, 1.0]
 ncpu: 1
+""",
+    "filter": """\
+# valdo.pipeline filter config
+# Filters scaled MTZ files by R-free and post-scaling CC; writes a file list for preprocess.
+# Run after `scale` and before `preprocess`.
+refine_summary: "/path/to/refine_1nwl/refine_summary.csv"   # from parse_refine_logs.py
+reindex_record: "/path/to/reindexed/reindex_record.pkl"     # null if reindex was skipped
+scaled_dir: "/path/to/scaled/"
+metrics: null                  # path to scaling_metrics.pkl; auto-detected in scaled_dir if null
+max_rfree: 0.45                # discard datasets with Rf_final above this
+min_cc: 0.55                   # discard datasets with post-scaling CC below this (0.0 = no filter)
+output: "/path/to/configs/scaled_filtered_files.txt"
 """,
     "preprocess": """\
 # valdo.pipeline preprocess config
