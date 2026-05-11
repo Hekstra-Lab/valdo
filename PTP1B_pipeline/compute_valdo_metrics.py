@@ -18,10 +18,32 @@ from tqdm import tqdm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RECONS_PHASED           = os.path.join(SCRIPT_DIR, "vae", "recons_phased")
 BOUND_MODELS_STD        = os.path.join(SCRIPT_DIR, "bound_models_standardized")
+ALL_SUPERPOSED_V2       = os.path.join(SCRIPT_DIR, "all_superposed_v2")
 MAPPING_TXT             = os.path.join(SCRIPT_DIR, "..", "notebooks", "ligand_cif_to_dataset_mapping.txt")
 
 DIFF_COL  = "WDF"
 PHASE_COL = "PH2FOFCWT"
+
+
+def classify_bound_models(superposed_dir):
+    """
+    Return (keedy_ids, ginn_ids) sets of 4-digit dataset IDs by parsing
+    all_superposed_v2 filenames:
+      Keedy: PTP1B_yXXXX_*
+      Ginn:  yXXXX_cluster4x_*
+    IDs in both (e.g. 0205) appear in both sets.
+    """
+    keedy_ids, ginn_ids = set(), set()
+    for fname in os.listdir(superposed_dir):
+        if fname == "README.txt":
+            continue
+        m_keedy = re.match(r"PTP1B_y(\d{4})_", fname)
+        m_ginn  = re.match(r"y(\d{4})_cluster4x_", fname)
+        if m_keedy:
+            keedy_ids.add(m_keedy.group(1))
+        if m_ginn:
+            ginn_ids.add(m_ginn.group(1))
+    return keedy_ids, ginn_ids
 
 
 def load_apo_ids(mapping_txt):
@@ -96,8 +118,20 @@ def heavy_atom_peak(grid, pdb_path):
     return float(np.max(peak_vals))
 
 
+def report_ha(results):
+    if not results:
+        print("  No results.")
+        return
+    print(f"  Datasets with heavy atoms : {len(results)}")
+    for did, val in results:
+        print(f"    {did}: {val:.4f}")
+    vals = [v for _, v in results]
+    print(f"  Mean WDF peak : {np.mean(vals):.4f}  Std : {np.std(vals):.4f}")
+
+
 def main():
     apo_ids = load_apo_ids(MAPPING_TXT)
+    keedy_ids, ginn_ids = classify_bound_models(ALL_SUPERPOSED_V2)
     all_mtz = sorted(glob.glob(os.path.join(RECONS_PHASED, "*.mtz")))
 
     # ── Metric 1: Apo peak ──────────────────────────────────────────────────
@@ -126,9 +160,9 @@ def main():
     # ── Metric 2: Heavy atom peak ────────────────────────────────────────────
     print("\n=== HEAVY ATOM PEAK METRIC ===")
     all_pdb = sorted(glob.glob(os.path.join(BOUND_MODELS_STD, "*.pdb")))
-    ha_results = []   # (did, peak)
-    ha_no_heavy = []  # did: ligand present but no Cl/Br/S/I
-    ha_missing = []   # did: no phased MTZ found
+    ha_all     = []   # (did, peak) — all bound models
+    ha_no_heavy = []
+    ha_missing  = []
 
     for pdb_path in tqdm(all_pdb, desc="Heavy atom peak"):
         did = extract_id_from_pdb(pdb_path)
@@ -144,21 +178,24 @@ def main():
             if val is None:
                 ha_no_heavy.append(did)
             else:
-                ha_results.append((did, val))
+                ha_all.append((did, val))
         except Exception as e:
             ha_missing.append((did, str(e)))
 
-    print(f"Bound models processed : {len(ha_results)}")
     if ha_no_heavy:
         print(f"No Cl/Br/S/I in LIG   : {len(ha_no_heavy)} — {ha_no_heavy}")
     if ha_missing:
-        print(f"MTZ missing / failed   : {len(ha_missing)} — {ha_missing}")
-    print("\nPer-dataset WDF peaks at heavy atom positions:")
-    for did, val in ha_results:
-        print(f"  {did}: {val:.4f}")
-    vals = [v for _, v in ha_results]
-    print(f"\nMean WDF peak at heavy atom : {np.mean(vals):.4f}")
-    print(f"Std                         : {np.std(vals):.4f}")
+        print(f"MTZ missing / failed   : {len(ha_missing)}")
+
+    ha_keedy = [(did, v) for did, v in ha_all if did in keedy_ids]
+    ha_ginn  = [(did, v) for did, v in ha_all if did in ginn_ids]
+
+    print(f"\n-- Keedy bound models --")
+    report_ha(ha_keedy)
+    print(f"\n-- Ginn bound models --")
+    report_ha(ha_ginn)
+    print(f"\n-- All bound models --")
+    report_ha(ha_all)
 
 
 if __name__ == "__main__":
