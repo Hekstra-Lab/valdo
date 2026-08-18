@@ -260,7 +260,7 @@ columns:
   - "F-obs"
   - "SIGF-obs"
 output_folder: "/path/to/scaled/"
-prefix: ""           # prefixes the scaling_metrics.pkl filename only, not the MTZs
+prefix: ""           # prefixes scaling_metrics.pkl and the two plots, not the MTZs
 when_opt: 0.2        # "all" | "never" | float in [0,1]
 ncpu: 1
 ```

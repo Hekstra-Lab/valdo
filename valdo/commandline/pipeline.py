@@ -705,7 +705,7 @@ columns:
   - "F-obs"
   - "SIGF-obs"
 output_folder: "/path/to/scaled/"
-prefix: ""                                      # prefix for the scaling_metrics.pkl filename only
+prefix: ""                                      # prefixes scaling_metrics.pkl and the two plots, not the MTZs
 when_opt: "all"                                 # "all", "never", or float threshold [0.0, 1.0]
 ncpu: 1
 """,
@@ -771,7 +771,8 @@ repeats: 1                                      # >1 saves mean+std array of sha
     "rescale": """\
 # valdo.pipeline rescale config
 # Reverses Z-score normalisation to recover original-scale amplitudes and
-# computes difference columns (recons, diff, SIG_recons).
+# computes difference columns: recons and diff, plus SIG_recons when the
+# reconstruct stage was run with repeats > 1.
 # info_folder must be the same as the preprocess output_folder
 # (it contains union_mean.pkl and union_sd.pkl).
 recons_path: "/path/to/vae/recons/recons.npy"
