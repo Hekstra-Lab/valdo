@@ -9,25 +9,37 @@ Defaults:
     output_csv        : refine_1nwl/refine_summary.csv
 
 Output CSV columns: file_idx, symop, Rw_start, Rf_start, Rw_final, Rf_final, time(s)
+
+The `Rf_final` column is what `valdo.pipeline filter` reads for its R-free cutoff.
 """
 
 import sys
 import os
+import re
 import glob
 import argparse
 import pandas as pd
 
+# phenix.refine ends its log with an explicit summary block:
+#     Start R-work = 0.5279, R-free = 0.5345
+#     Final R-work = 0.2170, R-free = 0.2286
+#     wall clock time: 238.71 s
+_START_RE = re.compile(r"^Start R-work\s*=\s*([0-9.]+),\s*R-free\s*=\s*([0-9.]+)", re.M)
+_FINAL_RE = re.compile(r"^Final R-work\s*=\s*([0-9.]+),\s*R-free\s*=\s*([0-9.]+)", re.M)
+_WALL_RE  = re.compile(r"^wall clock time:\s*([0-9.]+)", re.M)
 
-def parse_log(log_path):
-    with open(log_path) as f:
-        content = f.read()
 
-    # PHENIX prints a summary table at the end with lines like:
-    # "r_work = 0.xxxx r_free = 0.xxxx" for start and final
+def _parse_macrocycle_lines(content):
+    """Fallback for logs without the summary block: take the first and last
+    macro-cycle line mentioning both r_work and r_free.
+
+    These are intermediate values and do not always agree with the final
+    summary, so they are only used when the summary block is absent.
+    """
     lines = [l.strip() for l in content.splitlines()
              if "r_work" in l.lower() and "r_free" in l.lower()]
     if len(lines) < 2:
-        return float("nan"), float("nan"), float("nan"), float("nan")
+        return (float("nan"),) * 4
 
     def _parse_line(line):
         parts = line.replace(",", " ").replace("=", " ").split()
@@ -39,9 +51,28 @@ def parse_log(log_path):
         rw_start, rf_start = _parse_line(lines[0])
         rw_final, rf_final = _parse_line(lines[-1])
     except Exception:
-        return float("nan"), float("nan"), float("nan"), float("nan")
-
+        return (float("nan"),) * 4
     return rw_start, rf_start, rw_final, rf_final
+
+
+def parse_log(log_path):
+    """Return (Rw_start, Rf_start, Rw_final, Rf_final, wall_clock_seconds)."""
+    with open(log_path) as f:
+        content = f.read()
+
+    starts = _START_RE.findall(content)
+    finals = _FINAL_RE.findall(content)
+    walls  = _WALL_RE.findall(content)
+
+    if starts and finals:
+        # Last match wins, in case the log covers more than one run.
+        rw_start, rf_start = (float(x) for x in starts[-1])
+        rw_final, rf_final = (float(x) for x in finals[-1])
+    else:
+        rw_start, rf_start, rw_final, rf_final = _parse_macrocycle_lines(content)
+
+    elapsed = float(walls[-1]) if walls else float("nan")
+    return rw_start, rf_start, rw_final, rf_final, elapsed
 
 
 def main():
@@ -65,17 +96,7 @@ def main():
             continue
         file_idx, symop = parts
 
-        rw_start, rf_start, rw_final, rf_final = parse_log(log)
-
-        # Parse elapsed time from last "Time:" line
-        elapsed = float("nan")
-        try:
-            with open(log) as f:
-                for line in f:
-                    if line.strip().lower().startswith("time:"):
-                        elapsed = float(line.strip().split()[-1])
-        except Exception:
-            pass
+        rw_start, rf_start, rw_final, rf_final, elapsed = parse_log(log)
 
         records.append(dict(file_idx=file_idx, symop=symop,
                             Rw_start=rw_start, Rf_start=rf_start,
