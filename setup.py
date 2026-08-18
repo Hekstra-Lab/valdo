@@ -23,7 +23,9 @@ setup(name="rs-valdo",
         "gemmi<=0.6.7",
         "reciprocalspaceship>=0.9.18",
         "tqdm",
-        "scikit-learn"
+        "scikit-learn",
+        "pyyaml",
+        "matplotlib"
     ],
     entry_points={
         "console_scripts": [
