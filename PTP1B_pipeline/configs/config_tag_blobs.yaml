@@ -1,0 +1,9 @@
+blob_stats_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/blobs/blob_stats.pkl"
+model_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/refine_1nwl/refine_output/"
+bound_models_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/bound_models_standardized/"
+mtz_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/recons_phased/"
+focal_seqid: 215
+focal_radius: 5.0
+focal_tag_name: "cys215"
+output_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/blobs/"
+ncpu: 8

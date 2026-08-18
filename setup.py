@@ -23,12 +23,15 @@ setup(name="rs-valdo",
         "gemmi<=0.6.7",
         "reciprocalspaceship>=0.9.18",
         "tqdm",
-        "scikit-learn"
+        "scikit-learn",
+        "pyyaml",
+        "matplotlib"
     ],
     entry_points={
         "console_scripts": [
             "valdo.refine=valdo.commandline.refine:main",
-            "valdo.occupancy=valdo.commandline.occupancy:main"
+            "valdo.occupancy=valdo.commandline.occupancy:main",
+            "valdo.pipeline=valdo.commandline.pipeline:main"
         ]
     }
 )

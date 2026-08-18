@@ -2,6 +2,18 @@
 dev/
 scaled_mtzs/
 *pkl
+CLAUDE.md
+
+# PTP1B reference run: the guide, helper scripts and stage configs are tracked
+# as a worked example; everything the run itself produced or consumed is not.
+PTP1B_pipeline/*
+!PTP1B_pipeline/PIPELINE_RUN.md
+!PTP1B_pipeline/*.py
+PTP1B_pipeline/temp_*.py
+PTP1B_pipeline/temporary_*.py
+!PTP1B_pipeline/configs/
+PTP1B_pipeline/configs/*
+!PTP1B_pipeline/configs/config_*.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

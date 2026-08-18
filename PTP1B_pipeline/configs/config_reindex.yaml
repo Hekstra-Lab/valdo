@@ -1,0 +1,9 @@
+input_files: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/original_data/*.mtz"
+reference_file: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/original_data/0001.mtz"
+output_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/reindexed/"
+columns:
+  - "F-obs"
+  - "SIGF-obs"
+wcorr: true
+cc_min_dif: 0.2
+ncpu: 8

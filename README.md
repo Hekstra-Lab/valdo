@@ -7,6 +7,7 @@ fragment screens
 
 - [*V*ae *A*ssisted *L*igand *D*isc*O*very (Valdo)](#vae-assisted-ligand-discovery-valdo)
   - [Installation](#installation)
+  - [Running the Pipeline](#running-the-pipeline)
   - [Repository Organization](#repository-organization)
   - [*VALDO* Usage](#valdo-usage)
     - [Step 1: Diffraction Data](#step-1-diffraction-data)
@@ -40,11 +41,36 @@ git clone https://github.com/Hekstra-Lab/drug-screening.git
 cd drug-screening/
 pip install -e .
 ```
-4. If you intend to use the provided Jupyter notebooks, you will also need:
-- `python -m pip install -U pip` (update `pip`)
-- `python -m pip install -U matplotlib` (install `matplotlib`)
+4. If you intend to use the provided Jupyter notebooks, update `pip` with
+`python -m pip install -U pip` and install `jupyter`.
 
 Please [file an issue](https://github.com/Hekstra-Lab/drug-screening/issues) if you run into any difficulties!
+
+## Running the Pipeline
+
+There are two ways to run VALDO, and they cover the same nine steps.
+
+**From the command line — recommended for running a full screen.** Every step is a
+stage of the `valdo.pipeline` command, configured with a YAML file instead of
+notebook cells:
+
+```bash
+valdo.pipeline init scale > config_scale.yaml   # write a commented template
+# edit config_scale.yaml with your paths
+valdo.pipeline scale config_scale.yaml          # run the stage
+```
+
+Stages are run one at a time, in order, so you can inspect the output of each
+before moving on. Several write validation plots, and re-running a finished stage
+skips the work rather than repeating it.
+
+📖 **[Full CLI documentation → `docs/pipeline_cli.md`](./docs/pipeline_cli.md)** — stage
+list, config reference for every stage, and a worked end-to-end example.
+
+**From Python — recommended for exploring and for method development.** The
+[*VALDO* Usage](#valdo-usage) section below walks through the same steps using the
+underlying library calls, and `notebooks/pipeline.ipynb` runs them end to end on the
+PTP1B dataset.
 
 ## Repository Organization
 
@@ -76,6 +102,11 @@ The `drug-screening` repository is organized into the following directories:
 The full flow chart is shown below, followed by a discussion of each of the steps.
 
 ![VALDO Flow Chart](./valdo/flowchart.png)
+
+<br/>
+
+> Each step below has a `valdo.pipeline` equivalent for running it from the
+> command line — see [`docs/pipeline_cli.md`](./docs/pipeline_cli.md).
 
 <br/>
 

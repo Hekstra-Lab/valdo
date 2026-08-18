@@ -1,0 +1,23 @@
+file_list: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/recons/*.mtz"
+phasing_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/refine_1nwl/refine_output/"
+output_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/recons_phased/"
+blob_output_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/blobs/"
+model_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/refine_1nwl/refine_output/"
+phase_2FOFC_col_in: "PH2FOFCWT"
+phase_FOFC_col_in: "PHFOFCWT"
+phase_2FOFC_col_out: "PH2FOFCWT"
+phase_FOFC_col_out: "PHFOFCWT"
+rfree_label_in: null
+sigF_col: "SIGF-obs-scaled"
+diff_col: "diff"
+sigdF_pct: 95.0
+absdF_pct: 99.99
+F_col: "F-obs-scaled"
+recons_col: "recons"
+extrapolate_factors: [2, 4, 6, 8, 16]
+blob_diff_col: "WDF"
+phase_col: "PH2FOFCWT"
+cutoff: 3.5
+radius_in_A: 4.0
+prefix: ""
+ncpu: 8

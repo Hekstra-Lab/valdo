@@ -1,0 +1,9 @@
+file_list: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/configs/scaled_filtered_files.txt"
+output_folder: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/"
+intersection_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/intersection.pkl"
+union_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/union.pkl"
+sigF_path: "/mnt/home/mli10/projects/valdo/PTP1B_pipeline/vae/sigF.pkl"
+amplitude_col: "F-obs-scaled"
+error_col: "SIGF-obs-scaled"
+include_errors: true
+prefix: ""
