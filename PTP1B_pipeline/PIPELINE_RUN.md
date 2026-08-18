@@ -7,7 +7,11 @@ to configure, what output to expect, and notes on common pitfalls.
 
 **Dataset:** 1,679 MTZ files from a PTP1B fragment screen  
 **Reference structure:** 1NWL (apo form)  
-**Final result:** AUC = 0.9748 (all blobs); best AUC = 0.9773 at top-5,000 blobs by peakz
+**Final result:** AUC = 0.9704 (all blobs); best AUC = 0.9730 at top-9,414 blobs by peakz
+
+> Every count and figure below comes from a full re-run of all ten stages
+> (2026-08-18, ~16 min wall clock on one workstation with a single GPU), not from
+> the original exploratory run.
 
 ---
 
@@ -105,9 +109,9 @@ valdo.pipeline scale configs/config_scale.yaml
 ```
 
 - **Config:** `configs/config_scale.yaml`
-- **Input:** `reindexed/*.mtz` (1,702 files — includes both symop variants for ambiguous datasets)
+- **Input:** `reindexed/*.mtz` (1,701 files — includes both symop variants for ambiguous datasets)
 - **Output:**
-  - `scaled/####_{symop}.mtz` (1,702 files)
+  - `scaled/####_{symop}.mtz` (1,701 files)
   - `scaled/ptp1b_scaling_metrics.pkl` — per-dataset scaling statistics
   - `scaled/ptp1b_scaling_end_corr_histogram.png` — distribution of end-of-scaling correlations
   - `scaled/ptp1b_scaling_LS_scatter.png` — start vs. final least-squares loss (points above the diagonal are datasets where scaling made things worse)
@@ -179,7 +183,8 @@ valdo.pipeline filter configs/config_filter.yaml
 
 All subsequent pipeline stages accept this `.txt` file as `input_files` / `file_list`.
 
-**This run:** 1,620 datasets written (from 1,702 scaled):
+**This run:** 1,620 datasets written (from 1,701 scaled; the four filters overlap, so the
+drops below do not simply sum):
 - 22 worse-symop duplicates dropped (ambiguity resolution)
 - 50 dropped for `Rf_final > 0.45`
 - 1 dropped for all-NaN `F-obs-scaled` (`0110_1.mtz` — scaling diverged silently)
@@ -245,7 +250,8 @@ valdo.pipeline train configs/config_train.yaml
 | `w_kl` | 1.0 | KL divergence weight |
 | `eps` | 0.02 | Noise floor added to σ(F) |
 
-**This run:** Loss decreased from ~3.8×10⁶ (epoch 1) to ~2.15×10⁶ (epoch 500) with no NaN.
+**This run:** Training loss fell from 4.80×10⁶ to 1.78×10⁶ and validation loss to
+2.15×10⁶ over 500 epochs, with no NaN. Took 2 min on an RTX A6000.
 Loss curves saved to `vae/vae_loss_curves.png`.
 
 ### Troubleshooting: NaN loss
@@ -332,11 +338,16 @@ valdo.pipeline add_phases_and_blobs configs/config_add_phases_and_blobs.yaml
   - `vae/recons_phased/####_{symop}.mtz` — phased MTZ files with `WT`, `WDF`, `ESF_2`, `ESF_4`, `ESF_6`, `ESF_8`, `ESF_16` columns
   - `vae/blobs/blob_stats.pkl` — blob detections (columns: `sample`, `peakz`, `peak`, `score`, `cenx`, `ceny`, `cenz`, `volume`, `radius`)
 
-**This run:** 787 of 1,620 datasets were matched to a phase file and processed. 8,050 blobs detected.
+**This run:** all 1,620 datasets were matched to a phase file and processed. 16,547 blobs detected.
 
-> **Why fewer phased files than input?** Each dataset is matched to a phase file by
-> sample ID. Datasets whose refinement failed or was not run will not have a phase file
-> and are silently skipped. Check `refine_output/` coverage if you expect more output.
+> **Fewer phased files than input?** Each dataset is matched to a phase file by sample
+> ID. Datasets whose refinement failed or was not run have no phase file and are
+> silently skipped, so check `refine_output/` coverage if you expect more output.
+> Note that an earlier version of this pipeline phased only 787 of the 1,620 datasets
+> here: `find_phase_file` matched `*_data.mtz` (the input reflections, no phases)
+> ahead of `*_001.mtz` (the refined output) when PHENIX had written both. That is
+> fixed; if you are reading old results with roughly half the datasets missing, this
+> was why.
 
 > **Rerunning?** The step re-globs `vae/recons_phased/` for blob generation. If stale phased
 > files from a previous run remain there (for datasets no longer in your input), blobs will
@@ -370,12 +381,12 @@ valdo.pipeline tag_blobs configs/config_tag_blobs.yaml
   - `vae/recons_phased/` — phased MTZ files for fractional coordinate computation
   - `bound_models_standardized/` — known bound-state PDB files *(optional, for evaluation)*
 - **Output:**
-  - `vae/blobs/blob_stats_tagged.pkl` — 8,050 blobs with all annotation columns added
-  - `vae/blobs/filtered_blob_stats_tagged.pkl` — 7,072 blobs passing `cys215 == 0` and `duplicate == 0`
+  - `vae/blobs/blob_stats_tagged.pkl` — 16,547 blobs with all annotation columns added
+  - `vae/blobs/filtered_blob_stats_tagged.pkl` — 14,614 blobs passing `cys215 == 0` and `duplicate == 0`
 
-**This run:** 515 blobs from 167 known-bound datasets were flagged as `bound`; 96 blobs
+**This run:** 992 blobs from 167 known-bound datasets were flagged as `bound`; 188 blobs
 overlap known ligand atoms (`ligand == 1`). After excluding active-site and duplicate blobs,
-7,072 blobs remain for evaluation.
+14,614 blobs remain for evaluation.
 
 > **Bound model naming requirement:** `tag_lig_blobs` looks up PDB files by sample ID using
 > the pattern `{sample_id}.pdb` (e.g. `0049.pdb`). Your bound model PDB files **must** be
@@ -416,8 +427,8 @@ This produces two plots:
   `peakz` descending), evaluated at N = 500, 1000, 2000, …, 6000. The optimal N and its
   AUC are annotated.
 
-**This run:** AUC = **0.9748** (96 positive blobs, 6,976 negative blobs from 787 datasets).
-Best AUC = **0.9773** at the top **5,000** blobs by `peakz`.
+**This run:** AUC = **0.9704** (188 positive blobs, 14,426 negative blobs from 1,620
+datasets). Best AUC = **0.9730** at the top **9,414** blobs by `peakz`.
 
 > **`score` vs `peakz`:** The ROC curve and per-subset AUC are both computed using `score`
 > (integrated blob intensity) as the classifier. The subsets are selected by `peakz` (peak
