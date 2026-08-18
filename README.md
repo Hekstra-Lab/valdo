@@ -79,6 +79,22 @@ The full flow chart is shown below, followed by a discussion of each of the step
 
 <br/>
 
+### Running the pipeline from the command line
+
+Every step described below is also available as a stage of the `valdo.pipeline`
+command, configured through a YAML file instead of a notebook cell:
+
+```bash
+valdo.pipeline init scale > config_scale.yaml   # write a commented template
+valdo.pipeline scale config_scale.yaml          # run the stage
+```
+
+See [`docs/pipeline_cli.md`](./docs/pipeline_cli.md) for the stage list and the
+full config reference. The sections below document the underlying Python API,
+which remains the way to work interactively.
+
+<br/>
+
 ### Step 1: Diffraction Data
 
 The first step involves acquiring diffraction datasets in the `mtz` format. These datasets should follow a specific naming convention, where each file is named with a number followed by the `.mtz` extension (e.g., `01.mtz`, `02.mtz`, etc.).

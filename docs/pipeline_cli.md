@@ -29,6 +29,32 @@ valdo.pipeline standardize config_standardize.yaml
 
 ---
 
+## Reruns and `--force`
+
+Every stage except `standardize` checks for its own output before doing any work,
+so re-running a finished stage is cheap and safe:
+
+```
+Found existing vae_input.npy — skipping preprocess (use --force to rerun).
+```
+
+Pass `--force` to recompute anyway:
+
+```bash
+valdo.pipeline preprocess config_preprocess.yaml --force
+```
+
+The output each stage looks for is its main product — `reindex_record.pkl`,
+`scaling_metrics.pkl`, `vae_input.npy`, the trained VAE, `recons.npy`, any MTZ in
+the rescale output folder, `blob_stats.pkl`, `filtered_blob_stats_tagged.pkl`.
+
+> **Rerunning with different parameters:** `--force` overwrites, but does not clean
+> up. Stages that write one MTZ per dataset will leave files from the previous run
+> behind if the new run covers fewer datasets, and the stale files will be picked
+> up by the next stage. Empty the output folder yourself when changing the input set.
+
+---
+
 ## Stage Overview
 
 | Stage | Key Inputs | Key Outputs |
@@ -36,6 +62,7 @@ valdo.pipeline standardize config_standardize.yaml
 | `standardize` | Raw MTZ directory | `####.mtz` files |
 | `reindex` *(optional)* | Standardized MTZs, reference MTZ | Reindexed MTZs, `reindex_record.pkl` |
 | `scale` | MTZ file list, reference MTZ | Scaled MTZs, `scaling_metrics.pkl` |
+| `filter` *(optional)* | Refinement summary CSV, `scaling_metrics.pkl` | Text file listing the datasets that passed |
 | `preprocess` | Scaled MTZs | `vae_input.npy`, `vae_output.npy`, `vae_sigF.npy`, `intersection.pkl`, `union.pkl`, `union_mean.pkl`, `union_sd.pkl` |
 | `train` | `vae_input.npy`, `vae_output.npy` | `trained_vae.pkl` |
 | `reconstruct` | Trained VAE, `vae_input.npy` | `recons.npy` |
@@ -46,9 +73,9 @@ valdo.pipeline standardize config_standardize.yaml
 ### Stage Dependency Diagram
 
 ```
-standardize → [reindex →] scale → preprocess → train → reconstruct → rescale ──┐
-                    │                                                             ↓
-                    └──────────── valdo.refine (PHENIX) ──────────────→ add_phases_and_blobs → tag_blobs
+standardize → [reindex →] scale → [filter →] preprocess → train → reconstruct → rescale ──┐
+                    │                                                                        ↓
+                    └──────────── valdo.refine (PHENIX) ─────────────────→ add_phases_and_blobs → tag_blobs
 ```
 
 Square brackets indicate an **optional** stage. `valdo.refine` can run in parallel
@@ -144,8 +171,9 @@ ncpu: 1
 
 Anisotropic Debye-Waller scaling of all datasets to a reference.
 
-> **Filtering note:** Filtering by R-factor, R-free, or CC is not yet automated.
-> Manually curate `file_list` before running this stage if needed.
+> **Filtering note:** To drop poorly-behaved datasets *after* scaling, use the
+> `filter` stage below. `file_list` here should still be curated manually if you
+> already know some datasets are unusable.
 
 ```yaml
 file_list: "/path/to/reindexed/*.mtz"
@@ -157,6 +185,50 @@ output_folder: "/path/to/scaled/"
 prefix: ""           # prefix for scaling_metrics.pkl filename only (not for MTZ names)
 when_opt: 0.2        # "all" | "never" | float [0,1] threshold for numerical optimisation
 ncpu: 1
+```
+
+---
+
+### `filter` *(optional)*
+
+Selects which scaled datasets go into the VAE. Writes a plain text file with one
+MTZ path per line, which `preprocess` (and later `rescale`) accepts directly as
+its `file_list`. Four things are dropped:
+
+1. the worse-refining copy of any dataset left ambiguous by `reindex` (higher `Rf_final` wins removal),
+2. datasets whose refinement R-free exceeds `max_rfree`,
+3. datasets whose `F-obs-scaled` column is entirely NaN (scaling diverged),
+4. datasets whose post-scaling correlation is below `min_cc`.
+
+```yaml
+refine_summary: "/path/to/refine_summary.csv"
+reindex_record: "/path/to/reindexed/reindex_record.pkl"   # null if reindex was skipped
+scaled_dir: "/path/to/scaled/"
+metrics: null        # scaling_metrics.pkl; auto-detected inside scaled_dir when null
+max_rfree: 0.45      # drop datasets refining worse than this
+min_cc: 0.55         # drop datasets scaling worse than this (0.0 disables the check)
+output: "/path/to/configs/scaled_filtered_files.txt"
+```
+
+**The `refine_summary` CSV.** This stage reads refinement statistics that come
+from your own refinement run, not from valdo. The CSV needs three columns:
+
+| Column | Meaning |
+|--------|---------|
+| `file_idx` | Dataset ID, zero-padded to 4 digits (`0042`) |
+| `symop` | Symmetry operator index chosen by `reindex`; use `0` throughout if reindex was skipped |
+| `Rf_final` | R-free at the end of refinement |
+
+Rows are matched back to scaled MTZ files by the filename `{file_idx}_{symop}.mtz`,
+which is the naming `reindex` and `scale` produce. `PTP1B_pipeline/parse_refine_logs.py`
+in this repository is a worked example that builds this CSV from PHENIX log files;
+any other refinement pipeline works as long as the three columns are present.
+
+Then point the next stage at the result:
+
+```yaml
+# preprocess config
+file_list: "/path/to/configs/scaled_filtered_files.txt"
 ```
 
 ---
