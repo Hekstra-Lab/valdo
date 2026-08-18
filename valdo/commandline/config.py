@@ -157,9 +157,11 @@ def validate_config(stage, cfg):
             else:
                 cfg[field] = default
         else:
-            val = cfg[field]
-            if not isinstance(val, expected_type):
-                errors.append(f"  field '{field}': expected {_type_name(expected_type)}, got {type(val).__name__}")
+            ok, val = _coerce_type(cfg[field], expected_type)
+            if ok:
+                cfg[field] = val
+            else:
+                errors.append(f"  field '{field}': expected {_type_name(expected_type)}, got {type(cfg[field]).__name__}")
 
     if errors:
         print(f"Config validation failed for stage '{stage}':", file=sys.stderr)
@@ -181,6 +183,24 @@ def expand_glob_field(value):
     if not matches:
         print(f"Warning: glob pattern '{value}' matched no files.", file=sys.stderr)
     return matches
+
+
+def _coerce_type(val, expected_type):
+    """Check val against expected_type, returning (ok, value).
+
+    YAML parses `1` as an int, so a config written as `w_kl: 1` would otherwise
+    be rejected by a strict float check; accept an int wherever a float is
+    expected and pass the float on. Booleans are only ever accepted by fields
+    that explicitly expect bool, since bool is a subclass of int.
+    """
+    types = expected_type if isinstance(expected_type, tuple) else (expected_type,)
+    if isinstance(val, bool):
+        return bool in types, val
+    if isinstance(val, types):
+        return True, val
+    if float in types and isinstance(val, int):
+        return True, float(val)
+    return False, val
 
 
 def _type_name(t):
