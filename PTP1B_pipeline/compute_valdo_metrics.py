@@ -20,7 +20,12 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RECONS_PHASED           = os.path.join(SCRIPT_DIR, "vae", "recons_phased")
 BOUND_MODELS_STD        = os.path.join(SCRIPT_DIR, "bound_models_standardized")
 ALL_SUPERPOSED_V2       = os.path.join(SCRIPT_DIR, "all_superposed_v2")
+# The local copy is a run artifact and is not tracked; fall back to the copy
+# that lives in notebooks/ so this works from a clean checkout.
 MAPPING_TXT             = os.path.join(SCRIPT_DIR, "ligand_cif_to_dataset_mapping.txt")
+if not os.path.isfile(MAPPING_TXT):
+    MAPPING_TXT = os.path.join(SCRIPT_DIR, os.pardir, "notebooks",
+                               "ligand_cif_to_dataset_mapping.txt")
 
 DIFF_COL  = "WDF"
 PHASE_COL = "PH2FOFCWT"
