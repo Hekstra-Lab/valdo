@@ -546,7 +546,7 @@ def run_add_phases_and_blobs(cfg):
         ncpu=cfg["ncpu"],
     )
 
-    # Step 3b: drop NaN rows produced by extrapolation (mirrors pipeline_doeke.py)
+    # Step 3b: drop NaN rows produced by extrapolation
     for f in phased_files:
         try:
             ds = rs.read_mtz(f)

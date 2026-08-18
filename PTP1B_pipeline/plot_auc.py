@@ -21,13 +21,14 @@ def plot_roc(blob_df, name="VALDO", ax=None):
     roc_auc = metrics.auc(fpr, tpr)
 
     if ax is None:
-        fig, ax = plt.subplots(figsize=(4, 4))
+        fig, ax = plt.subplots(figsize=(4, 3))
     else:
         fig = ax.get_figure()
 
     display = metrics.RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc, estimator_name=name)
     display.plot(ax=ax)
-    ax.plot([0, 1], [0, 1], "k--", lw=0.8)
+    ax.set_aspect("auto")
+    ax.plot([0, 1], [0, 1], "k--", lw=1.5)
     ax.set_xlim([0, 1])
     ax.set_ylim([0, 1.02])
     ax.grid(alpha=0.3)
@@ -39,8 +40,7 @@ def plot_auc_vs_n(blob_df, name="VALDO", ax=None):
     blob_sorted = blob_df.sort_values("peakz", ascending=False).reset_index(drop=True)
     n_total = len(blob_sorted)
 
-    checkpoints = list(range(500, 7001, 500))
-    checkpoints = [n for n in checkpoints if n <= n_total]
+    checkpoints = list(np.linspace(500, n_total, 20, dtype=int))
     if n_total not in checkpoints:
         checkpoints.append(n_total)
 
@@ -55,24 +55,13 @@ def plot_auc_vs_n(blob_df, name="VALDO", ax=None):
 
     ns = np.array(ns)
     aucs = np.array(aucs)
-    best_idx = np.argmax(aucs)
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 4))
     else:
         fig = ax.get_figure()
 
-    ax.plot(ns, aucs, "o-", lw=1.5, ms=4, label=name)
-    ax.axvline(ns[best_idx], color="red", lw=1, ls="--", alpha=0.7)
-    ax.annotate(
-        f"max AUC={aucs[best_idx]:.3f}\n(N={ns[best_idx]})",
-        xy=(ns[best_idx], aucs[best_idx]),
-        xytext=(10, -20),
-        textcoords="offset points",
-        color="red",
-        fontsize=8,
-        arrowprops=dict(arrowstyle="->", color="red", lw=0.8),
-    )
+    ax.plot(ns, aucs, "o-", lw=2, ms=4, label=name)
     ax.set_xlabel("Number of blobs (top-N by peakz)")
     ax.set_ylabel("AUC")
     ax.set_title("AUC vs number of blobs")
@@ -130,7 +119,14 @@ def main():
     roc_path = args.output or os.path.join(out_dir, "roc_curve.png")
     fig_roc.tight_layout()
     fig_roc.savefig(roc_path, dpi=150)
-    print(f"ROC curve saved to {roc_path}")
+    roc_svg_path = roc_path.replace(".png", ".svg")
+    fig_roc.savefig(roc_svg_path, transparent=True)
+    print(f"ROC curve saved to {roc_path}, {roc_svg_path}")
+
+    fpr, tpr, thresholds = metrics.roc_curve(blob_df["ligand"], blob_df["score"], pos_label=1)
+    roc_csv_path = roc_path.replace(".png", "_data.csv")
+    pd.DataFrame({"fpr": fpr, "tpr": tpr, "threshold": thresholds}).to_csv(roc_csv_path, index=False)
+    print(f"ROC data saved to  {roc_csv_path}")
 
     # AUC vs N blobs
     fig_n, ns, aucs = plot_auc_vs_n(blob_df, name=args.name)
@@ -139,7 +135,13 @@ def main():
     auc_n_path = os.path.join(out_dir, "auc_vs_nblobs.png")
     fig_n.tight_layout()
     fig_n.savefig(auc_n_path, dpi=150)
-    print(f"AUC-vs-N saved to  {auc_n_path}")
+    auc_n_svg_path = auc_n_path.replace(".png", ".svg")
+    fig_n.savefig(auc_n_svg_path, transparent=True)
+    print(f"AUC-vs-N saved to  {auc_n_path}, {auc_n_svg_path}")
+
+    auc_n_csv_path = auc_n_path.replace(".png", "_data.csv")
+    pd.DataFrame({"n_blobs": ns, "auc": aucs}).to_csv(auc_n_csv_path, index=False)
+    print(f"AUC-vs-N data saved to {auc_n_csv_path}")
 
 
 if __name__ == "__main__":

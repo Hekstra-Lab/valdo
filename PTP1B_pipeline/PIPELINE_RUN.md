@@ -420,12 +420,15 @@ script:
 python plot_auc.py vae/blobs/filtered_blob_stats_tagged.pkl
 ```
 
-This produces two plots:
+This produces two plots, each also written as an SVG, plus the underlying numbers
+as CSV so you can re-plot them elsewhere:
 
-- **`roc_curve.png`** — ROC curve for all blobs using `score` as the ranking metric
-- **`auc_vs_nblobs.png`** — AUC as a function of the number of top blobs kept (sorted by
-  `peakz` descending), evaluated at N = 500, 1000, 2000, …, 6000. The optimal N and its
-  AUC are annotated.
+- **`roc_curve.png`** / `.svg` / `roc_curve_data.csv` — ROC curve for all blobs using
+  `score` as the ranking metric
+- **`auc_vs_nblobs.png`** / `.svg` / `auc_vs_nblobs_data.csv` — AUC as a function of the
+  number of top blobs kept (sorted by `peakz` descending), evaluated at 20 checkpoints
+  spread from N = 500 to the full blob count, so the sampling scales with the size of
+  your screen rather than stopping at a fixed ceiling.
 
 **This run:** AUC = **0.9704** (188 positive blobs, 14,426 negative blobs from 1,620
 datasets). Best AUC = **0.9730** at the top **9,414** blobs by `peakz`.
